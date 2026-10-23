@@ -1,0 +1,6 @@
+{
+  "name": "Zen OS",
+  "description": "A dark brutalist productivity dashboard featuring task management, calendar, work log, and document vault with premium cinematic animations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
