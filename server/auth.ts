@@ -3,7 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
 const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
-export const SUPABASE_CONFIGURED = url.startsWith('http') && anonKey.length > 20 && !url.includes('your_supabase');
+export const SUPABASE_CONFIGURED = url.startsWith('http') && anonKey.length > 20 && !/your[-_]/i.test(url + anonKey);
 
 /** Allow AI calls without login (local-only/demo mode). Off by default in production. */
 export const ALLOW_ANONYMOUS =

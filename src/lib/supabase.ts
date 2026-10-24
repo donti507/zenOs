@@ -18,7 +18,7 @@ const rawKey: string = runtime.supabaseAnonKey || env.VITE_SUPABASE_ANON_KEY || 
 
 /** True only when real Supabase credentials are present. When false the app runs in local-only mode. */
 export const SUPABASE_CONFIGURED =
-  rawUrl.startsWith('http') && !rawUrl.includes('your_supabase') && rawKey.length > 20 && !rawKey.includes('your_supabase');
+  rawUrl.startsWith('http') && rawKey.length > 20 && !/your[-_]/i.test(rawUrl + rawKey);
 
 if (!SUPABASE_CONFIGURED && typeof window !== 'undefined') {
   console.warn('[ZEN_OS] Supabase is not configured. Data will be stored in this browser only.');
