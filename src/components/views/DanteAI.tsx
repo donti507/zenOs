@@ -9,6 +9,7 @@ import DanteOrb from "../DanteOrb";
 import { Task, DanteMessage } from "../../types";
 import Markdown from "../ui/Markdown";
 import { useSpeechRecognition } from "../../hooks/useSpeechRecognition";
+import { useRecorderTranscription } from "../../hooks/useRecorderTranscription";
 import { useSpeechSynthesis, splitSentences } from "../../hooks/useSpeechSynthesis";
 import {
   DanteAction,
@@ -33,7 +34,7 @@ const VIEWS = ["dashboard", "kanban", "calendar", "meetings", "analytics", "vaul
 const HISTORY_TO_SEND = 12;
 
 type ActionResult = { label: string; ok: boolean; detail?: string };
-type Status = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean };
+type Status = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean; stt?: boolean };
 
 const loadPref = <T,>(key: string, fallback: T): T => {
   try {
@@ -288,17 +289,18 @@ export default function DanteAI() {
   const stopGenerating = () => abortRef.current?.abort();
 
   // ---------- voice input ----------
-  const speech = useSpeechRecognition({
-    lang: voiceLang,
-    onFinal: text => {
-      if (handsFreeRef.current) {
-        send(text);
-      } else {
-        setInput(prev => (prev ? prev.trimEnd() + " " : "") + text);
-        inputRef.current?.focus();
-      }
-    },
-  });
+  const onVoiceText = (text: string) => {
+    if (handsFreeRef.current) {
+      send(text);
+    } else {
+      setInput(prev => (prev ? prev.trimEnd() + " " : "") + text);
+      inputRef.current?.focus();
+    }
+  };
+  const browserSpeech = useSpeechRecognition({ lang: voiceLang, onFinal: onVoiceText });
+  const serverSpeech = useRecorderTranscription({ lang: voiceLang, onFinal: onVoiceText, getToken: getAuthToken });
+  // Prefer server transcription (works in every browser); fall back to the browser's own speech service
+  const speech = status?.stt && serverSpeech.supported ? serverSpeech : browserSpeech;
 
   const toggleMic = () => {
     if (speech.listening) {

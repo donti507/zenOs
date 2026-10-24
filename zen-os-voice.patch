@@ -1,0 +1,306 @@
+From c05ca6db94b5e916dcaaae4ae8c9bc89b3a4ea69 Mon Sep 17 00:00:00 2001
+From: Claude <c@x>
+Date: Sat, 24 Oct 2026 00:07:07 +0000
+Subject: [PATCH] Server voice transcription (works in every browser)
+
+---
+ server.ts                             |   6 ++
+ server/stt.ts                         |  52 +++++++++++
+ src/components/views/DanteAI.tsx      |  26 +++---
+ src/hooks/useRecorderTranscription.ts | 126 ++++++++++++++++++++++++++
+ src/hooks/useSpeechRecognition.ts     |   2 +-
+ 5 files changed, 199 insertions(+), 13 deletions(-)
+ create mode 100644 server/stt.ts
+ create mode 100644 src/hooks/useRecorderTranscription.ts
+
+diff --git a/server.ts b/server.ts
+index df40daa..e67386b 100644
+--- a/server.ts
++++ b/server.ts
+@@ -5,6 +5,7 @@ import fs from 'fs';
+ import { loadLLMConfig, describeConfigProblem, streamChat, LLMError, type ChatMessage } from './server/llm';
+ import { buildSystemPrompt } from './server/prompt';
+ import { requireUser, rateLimit, ALLOW_ANONYMOUS, SUPABASE_CONFIGURED } from './server/auth';
++import { transcribe, STT_READY, stt } from './server/stt';
+ 
+ const PORT = Number(process.env.PORT || 3000);
+ const isProd = process.env.NODE_ENV === 'production';
+@@ -28,9 +29,13 @@ async function startServer() {
+       model: llm.model || null,
+       problem,
+       authRequired: !ALLOW_ANONYMOUS,
++      stt: STT_READY,
+     });
+   });
+ 
++  // Voice input: browser records audio, server sends it to a Whisper-style model
++  app.post('/api/transcribe', requireUser, rateLimit, express.raw({ type: 'audio/*', limit: '15mb' }), transcribe);
++
+   app.post('/api/dante', requireUser, rateLimit, async (req, res) => {
+     const problem = describeConfigProblem(llm);
+     if (problem) return res.status(503).json({ error: problem });
+@@ -121,6 +126,7 @@ async function startServer() {
+   app.listen(PORT, '0.0.0.0', () => {
+     console.log(`ZEN_OS listening on http://0.0.0.0:${PORT}`);
+     console.log(`  AI provider: ${llm.provider}${llm.model ? ` (${llm.model})` : ''}${describeConfigProblem(llm) ? ` — ${describeConfigProblem(llm)}` : ''}`);
++    console.log(`  Voice transcription: ${STT_READY ? stt.model : 'off (browser speech only)'}`);
+     console.log(`  Supabase: ${SUPABASE_CONFIGURED ? 'configured' : 'NOT configured (local mode only)'} · anonymous AI: ${ALLOW_ANONYMOUS}`);
+   });
+ }
+diff --git a/server/stt.ts b/server/stt.ts
+new file mode 100644
+index 0000000..ec13cef
+--- /dev/null
++++ b/server/stt.ts
+@@ -0,0 +1,52 @@
++/**
++ * Server-side speech-to-text for Dante's microphone.
++ * Forwards recorded audio to an OpenAI-compatible /audio/transcriptions endpoint
++ * (Whisper-style). Works in every browser, unlike the Web Speech API.
++ *
++ * STT_MODEL     model name, e.g. "whisper-large-v3" (required to enable this)
++ * STT_BASE_URL  defaults to LLM_BASE_URL
++ * STT_API_KEY   defaults to LLM_API_KEY
++ */
++import type { Request, Response } from 'express';
++
++export const stt = {
++  model: process.env.STT_MODEL || '',
++  baseUrl: (process.env.STT_BASE_URL || process.env.LLM_BASE_URL || '').replace(/\/+$/, ''),
++  apiKey: process.env.STT_API_KEY || process.env.LLM_API_KEY || '',
++};
++export const STT_READY = !!(stt.model && stt.baseUrl);
++
++const EXT: Record<string, string> = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/wav': 'wav' };
++
++export async function transcribe(req: Request, res: Response) {
++  if (!STT_READY) return res.status(503).json({ error: 'Voice transcription is not set up on the server (STT_MODEL is missing).' });
++  const audio = req.body as Buffer;
++  if (!Buffer.isBuffer(audio) || audio.length < 1000) return res.status(400).json({ error: 'No audio received. Try speaking a little longer.' });
++
++  const type = String(req.headers['content-type'] || 'audio/webm').split(';')[0];
++  const form = new FormData();
++  form.append('file', new Blob([audio], { type }), `speech.${EXT[type] || 'webm'}`);
++  form.append('model', stt.model);
++  const lang = String(req.query.lang || '').split('-')[0];
++  if (/^[a-z]{2}$/.test(lang)) form.append('language', lang);
++
++  try {
++    const r = await fetch(`${stt.baseUrl}/audio/transcriptions`, {
++      method: 'POST',
++      headers: stt.apiKey ? { Authorization: `Bearer ${stt.apiKey}` } : {},
++      body: form,
++      signal: AbortSignal.timeout(60000),
++    });
++    const body = await r.text();
++    if (!r.ok) {
++      let detail = body.slice(0, 200);
++      try { detail = JSON.parse(body)?.error?.message || detail; } catch { /* not JSON */ }
++      return res.status(502).json({ error: `Transcription failed (${r.status}). ${detail}` });
++    }
++    let text = body;
++    try { text = JSON.parse(body).text ?? ''; } catch { /* plain-text response */ }
++    res.json({ text: String(text).trim() });
++  } catch (err: any) {
++    res.status(502).json({ error: err?.name === 'TimeoutError' ? 'Transcription took too long.' : `Could not reach the transcription server (${err?.message}).` });
++  }
++}
+diff --git a/src/components/views/DanteAI.tsx b/src/components/views/DanteAI.tsx
+index 68056a7..8fc0fa7 100644
+--- a/src/components/views/DanteAI.tsx
++++ b/src/components/views/DanteAI.tsx
+@@ -9,6 +9,7 @@ import DanteOrb from "../DanteOrb";
+ import { Task, DanteMessage } from "../../types";
+ import Markdown from "../ui/Markdown";
+ import { useSpeechRecognition } from "../../hooks/useSpeechRecognition";
++import { useRecorderTranscription } from "../../hooks/useRecorderTranscription";
+ import { useSpeechSynthesis, splitSentences } from "../../hooks/useSpeechSynthesis";
+ import {
+   DanteAction,
+@@ -33,7 +34,7 @@ const VIEWS = ["dashboard", "kanban", "calendar", "meetings", "analytics", "vaul
+ const HISTORY_TO_SEND = 12;
+ 
+ type ActionResult = { label: string; ok: boolean; detail?: string };
+-type Status = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean };
++type Status = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean; stt?: boolean };
+ 
+ const loadPref = <T,>(key: string, fallback: T): T => {
+   try {
+@@ -288,17 +289,18 @@ export default function DanteAI() {
+   const stopGenerating = () => abortRef.current?.abort();
+ 
+   // ---------- voice input ----------
+-  const speech = useSpeechRecognition({
+-    lang: voiceLang,
+-    onFinal: text => {
+-      if (handsFreeRef.current) {
+-        send(text);
+-      } else {
+-        setInput(prev => (prev ? prev.trimEnd() + " " : "") + text);
+-        inputRef.current?.focus();
+-      }
+-    },
+-  });
++  const onVoiceText = (text: string) => {
++    if (handsFreeRef.current) {
++      send(text);
++    } else {
++      setInput(prev => (prev ? prev.trimEnd() + " " : "") + text);
++      inputRef.current?.focus();
++    }
++  };
++  const browserSpeech = useSpeechRecognition({ lang: voiceLang, onFinal: onVoiceText });
++  const serverSpeech = useRecorderTranscription({ lang: voiceLang, onFinal: onVoiceText, getToken: getAuthToken });
++  // Prefer server transcription (works in every browser); fall back to the browser's own speech service
++  const speech = status?.stt && serverSpeech.supported ? serverSpeech : browserSpeech;
+ 
+   const toggleMic = () => {
+     if (speech.listening) {
+diff --git a/src/hooks/useRecorderTranscription.ts b/src/hooks/useRecorderTranscription.ts
+new file mode 100644
+index 0000000..7c9cd7b
+--- /dev/null
++++ b/src/hooks/useRecorderTranscription.ts
+@@ -0,0 +1,126 @@
++import { useCallback, useEffect, useRef, useState } from 'react';
++
++/**
++ * Records the microphone with MediaRecorder and sends the audio to /api/transcribe.
++ * Same interface as useSpeechRecognition, so Dante can use either.
++ * Stops automatically after ~1.5 s of silence once you have started talking.
++ */
++export function useRecorderTranscription({
++  lang,
++  onFinal,
++  getToken,
++}: {
++  lang: string;
++  onFinal: (text: string) => void;
++  getToken: () => Promise<string | null>;
++}) {
++  const supported = typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
++  const [listening, setListening] = useState(false);
++  const [interim, setInterim] = useState('');
++  const [error, setError] = useState<string | null>(null);
++  const [level, setLevel] = useState(0);
++
++  const recRef = useRef<MediaRecorder | null>(null);
++  const streamRef = useRef<MediaStream | null>(null);
++  const ctxRef = useRef<AudioContext | null>(null);
++  const rafRef = useRef<number>(0);
++  const cancelledRef = useRef(false);
++  const onFinalRef = useRef(onFinal);
++  onFinalRef.current = onFinal;
++
++  const cleanup = () => {
++    cancelAnimationFrame(rafRef.current);
++    streamRef.current?.getTracks().forEach(t => t.stop());
++    ctxRef.current?.close().catch(() => {});
++    streamRef.current = null;
++    ctxRef.current = null;
++    setLevel(0);
++  };
++
++  const stop = useCallback(() => {
++    if (recRef.current?.state === 'recording') recRef.current.stop();
++  }, []);
++
++  const cancel = useCallback(() => {
++    cancelledRef.current = true;
++    stop();
++  }, [stop]);
++
++  const start = useCallback(async () => {
++    if (!supported) return setError('Recording is not supported in this browser.');
++    if (!window.isSecureContext) return setError('Voice input only works over HTTPS (or on localhost).');
++    if (recRef.current?.state === 'recording') return;
++    setError(null);
++    cancelledRef.current = false;
++
++    let stream: MediaStream;
++    try {
++      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
++    } catch (err: any) {
++      return setError(err?.name === 'NotAllowedError' ? 'Microphone access was blocked. Allow it in the browser’s site settings.' : 'No microphone was found.');
++    }
++    streamRef.current = stream;
++
++    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
++    const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
++    const chunks: BlobPart[] = [];
++    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
++
++    // Silence detection with a small level meter
++    const ctx = new AudioContext();
++    ctxRef.current = ctx;
++    const analyser = ctx.createAnalyser();
++    analyser.fftSize = 1024;
++    ctx.createMediaStreamSource(stream).connect(analyser);
++    const buf = new Uint8Array(analyser.fftSize);
++    const startedAt = Date.now();
++    let heardSpeech = false;
++    let lastLoud = Date.now();
++    const tick = () => {
++      analyser.getByteTimeDomainData(buf);
++      let sum = 0;
++      for (const v of buf) sum += ((v - 128) / 128) ** 2;
++      const rms = Math.sqrt(sum / buf.length);
++      setLevel(Math.min(1, rms * 6));
++      if (rms > 0.03) { heardSpeech = true; lastLoud = Date.now(); }
++      const now = Date.now();
++      if ((heardSpeech && now - lastLoud > 1500) || now - startedAt > 30000 || (!heardSpeech && now - startedAt > 8000)) {
++        stop();
++        return;
++      }
++      rafRef.current = requestAnimationFrame(tick);
++    };
++
++    rec.onstart = () => { setListening(true); setInterim('Listening…'); tick(); };
++    rec.onstop = async () => {
++      cleanup();
++      setListening(false);
++      if (cancelledRef.current || !heardSpeech) { setInterim(''); if (!heardSpeech && !cancelledRef.current) setError('I didn’t hear anything. Try again a little closer to the mic.'); return; }
++      setInterim('Transcribing…');
++      try {
++        const token = await getToken();
++        const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
++        const res = await fetch(`/api/transcribe?lang=${encodeURIComponent(lang)}`, {
++          method: 'POST',
++          headers: { 'Content-Type': blob.type.split(';')[0], ...(token ? { Authorization: `Bearer ${token}` } : {}) },
++          body: blob,
++        });
++        const data = await res.json().catch(() => ({}));
++        if (!res.ok) throw new Error(data.error || `Transcription failed (${res.status}).`);
++        if (data.text) onFinalRef.current(data.text);
++        else setError('I couldn’t make out any words. Try again.');
++      } catch (err: any) {
++        setError(err?.message || 'Transcription failed.');
++      } finally {
++        setInterim('');
++      }
++    };
++
++    recRef.current = rec;
++    rec.start(250);
++  }, [supported, lang, stop, getToken]);
++
++  useEffect(() => () => { cancelledRef.current = true; recRef.current?.state === 'recording' && recRef.current.stop(); cleanup(); }, []);
++
++  return { supported, listening, interim, error, setError, start, stop, cancel, level };
++}
+diff --git a/src/hooks/useSpeechRecognition.ts b/src/hooks/useSpeechRecognition.ts
+index d46640f..d50c254 100644
+--- a/src/hooks/useSpeechRecognition.ts
++++ b/src/hooks/useSpeechRecognition.ts
+@@ -5,7 +5,7 @@ const ERROR_MESSAGES: Record<string, string> = {
+   'service-not-allowed': 'Speech recognition is disabled in this browser.',
+   'no-speech': 'I didn’t hear anything. Try again a little closer to the mic.',
+   'audio-capture': 'No microphone was found.',
+-  network: 'Speech recognition needs an internet connection (the browser sends audio to its speech service).',
++  network: 'This browser’s voice service isn’t available here (common on Linux, Brave and with VPNs). Ask the app admin to set STT_MODEL for server voice input.',
+   'language-not-supported': 'This language isn’t supported for voice input in this browser.',
+ };
+ 
+-- 
+2.43.0
+

@@ -5,7 +5,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'service-not-allowed': 'Speech recognition is disabled in this browser.',
   'no-speech': 'I didn’t hear anything. Try again a little closer to the mic.',
   'audio-capture': 'No microphone was found.',
-  network: 'Speech recognition needs an internet connection (the browser sends audio to its speech service).',
+  network: 'This browser’s voice service isn’t available here (common on Linux, Brave and with VPNs). Ask the app admin to set STT_MODEL for server voice input.',
   'language-not-supported': 'This language isn’t supported for voice input in this browser.',
 };
 

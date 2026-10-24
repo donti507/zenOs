@@ -5,6 +5,7 @@ import fs from 'fs';
 import { loadLLMConfig, describeConfigProblem, streamChat, LLMError, type ChatMessage } from './server/llm';
 import { buildSystemPrompt } from './server/prompt';
 import { requireUser, rateLimit, ALLOW_ANONYMOUS, SUPABASE_CONFIGURED } from './server/auth';
+import { transcribe, STT_READY, stt } from './server/stt';
 
 const PORT = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
@@ -28,8 +29,12 @@ async function startServer() {
       model: llm.model || null,
       problem,
       authRequired: !ALLOW_ANONYMOUS,
+      stt: STT_READY,
     });
   });
+
+  // Voice input: browser records audio, server sends it to a Whisper-style model
+  app.post('/api/transcribe', requireUser, rateLimit, express.raw({ type: 'audio/*', limit: '15mb' }), transcribe);
 
   app.post('/api/dante', requireUser, rateLimit, async (req, res) => {
     const problem = describeConfigProblem(llm);
@@ -121,6 +126,7 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`ZEN_OS listening on http://0.0.0.0:${PORT}`);
     console.log(`  AI provider: ${llm.provider}${llm.model ? ` (${llm.model})` : ''}${describeConfigProblem(llm) ? ` — ${describeConfigProblem(llm)}` : ''}`);
+    console.log(`  Voice transcription: ${STT_READY ? stt.model : 'off (browser speech only)'}`);
     console.log(`  Supabase: ${SUPABASE_CONFIGURED ? 'configured' : 'NOT configured (local mode only)'} · anonymous AI: ${ALLOW_ANONYMOUS}`);
   });
 }
