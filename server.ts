@@ -124,7 +124,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`ZEN_OS listening on http://0.0.0.0:${PORT}`);
+    console.log(`ZEN_OS running → open http://localhost:${PORT} in your browser`);
     console.log(`  AI provider: ${llm.provider}${llm.model ? ` (${llm.model})` : ''}${describeConfigProblem(llm) ? ` — ${describeConfigProblem(llm)}` : ''}`);
     console.log(`  Voice transcription: ${STT_READY ? stt.model : 'off (browser speech only)'}`);
     console.log(`  Supabase: ${SUPABASE_CONFIGURED ? 'configured' : 'NOT configured (local mode only)'} · anonymous AI: ${ALLOW_ANONYMOUS}`);

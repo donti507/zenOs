@@ -15,6 +15,7 @@ export interface DanteContext {
   googleEvents?: any[];
   vault?: any[];
   categories?: any[];
+  mode?: 'chat' | 'voice';
   stats?: { streak?: number; completionRate?: number; overdue?: number; doneToday?: number };
 }
 
@@ -76,5 +77,11 @@ Available actions (use task/meeting ids from the data above whenever possible):
 - create_meeting: { "personName": string, "date": "YYYY-MM-DD", "time": "HH:MM", "subject": string }
 - switch_view: { "view": "dashboard"|"kanban"|"calendar"|"meetings"|"analytics"|"vault"|"dante" }
 - filter_category: { "cat": category id or null }
-You may include several actions in the list. Do NOT output a json block when you are only answering a question. Never delete anything.`;
+You may include several actions in the list. Do NOT output a json block when you are only answering a question. Never delete anything.${ctx.mode === 'voice' ? `
+
+## VOICE MODE (your reply is spoken aloud)
+- Answer like a calm, capable assistant talking: 1 to 3 short sentences, natural spoken language.
+- No markdown, no bullet lists, no headings, no emojis, no URLs read out.
+- Say dates naturally ("tomorrow at 4 pm", "Friday the 30th"), but keep YYYY-MM-DD inside the json block.
+- When you change something, confirm it in one short sentence, then add the json block (it is not read aloud).` : ''}`;
 }

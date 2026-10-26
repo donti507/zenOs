@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import Modals from '../Modals';
 import MorningBriefing from '../MorningBriefing';
+import DanteLive from '../DanteLive';
 import DanteOrb from '../DanteOrb';
 import { useZenos } from '../../context/ZenosContext';
 import { pathForView, routeForPath } from '../../lib/routes';
@@ -65,6 +66,16 @@ export function PageLoader() {
 
 export default function AppShell() {
   const { pathname } = useLocation();
+  const { setLiveOpen } = useZenos();
+
+  // Ctrl+Shift+Space opens Dante Live from anywhere
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.code === 'Space') { e.preventDefault(); setLiveOpen(true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const reduce = useReducedMotion();
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('zenos_sidebar_collapsed') === '1'; } catch { return false; }
@@ -130,6 +141,7 @@ export default function AppShell() {
 
       <Modals />
       <MorningBriefing />
+      <DanteLive />
     </div>
   );
 }

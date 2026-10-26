@@ -140,6 +140,8 @@ interface ZenosContextType {
   saveDanteMessage: (role: 'user' | 'assistant', content: string) => Promise<DanteMessage>;
   clearDanteHistory: () => Promise<void>;
   getAuthToken: () => Promise<string | null>;
+  liveOpen: boolean;
+  setLiveOpen: (open: boolean) => void;
   passwordRecovery: boolean;
   setPasswordRecovery: (v: boolean) => void;
   /** Always-current state, safe to read inside async callbacks without stale closures. */
@@ -167,6 +169,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showBriefing, setShowBriefing] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
   // True after the user opens a password-reset link from their email
   const [passwordRecovery, setPasswordRecovery] = useState(
     () => typeof window !== 'undefined' && /type=recovery/.test(window.location.hash + window.location.search)
@@ -671,6 +674,8 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         saveDanteMessage,
         clearDanteHistory,
         getAuthToken,
+        liveOpen,
+        setLiveOpen,
         passwordRecovery,
         setPasswordRecovery,
         stateRef,

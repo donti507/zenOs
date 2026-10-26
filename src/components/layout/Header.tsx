@@ -18,7 +18,7 @@ const SUBTITLES: Record<string, string> = {
 };
 
 export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean }) {
-  const { state, updateState, toggleTheme, setShowModal, setShowBriefing, accessToken, fetchGoogleEvents, user } = useZenos();
+  const { state, updateState, toggleTheme, setShowModal, setShowBriefing, accessToken, fetchGoogleEvents, user, setLiveOpen } = useZenos();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const status = useDanteStatus();
@@ -101,7 +101,7 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
               type="text"
             />
             <div className="absolute right-2 flex items-center gap-1.5">
-              <button className="text-on-surface-variant hover:text-primary transition-colors flex items-center cursor-pointer" type="button" onClick={() => navigate('/dante', { state: { voice: true } })} aria-label="Ask by voice">
+              <button className="text-on-surface-variant hover:text-primary transition-colors flex items-center cursor-pointer" type="button" onClick={() => setLiveOpen(true)} aria-label="Talk to Dante (Live)">
                 <span className="material-symbols-outlined text-[16px]">mic</span>
               </button>
               <kbd className="text-[11px] bg-surface-container px-1.5 py-0.5 rounded text-on-surface-variant font-medium">⌘K</kbd>
@@ -112,12 +112,12 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
 
       <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
         <button
-          onClick={() => navigate('/dante')}
-          className={`hidden xl:flex items-center gap-1 px-2.5 py-1 rounded-full cursor-pointer ${status && !status.ready ? 'bg-error-container text-error' : 'bg-surface-container-low text-primary'}`}
-          title={status?.problem || (status?.model ? `Model: ${status.model}` : 'Dante')}
+          onClick={() => setLiveOpen(true)}
+          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full cursor-pointer transition-colors ${status && !status.ready ? 'bg-error-container text-error' : 'bg-gradient-to-r from-primary-container to-tertiary-container text-white hover:brightness-110 shadow-soft'}`}
+          title={status?.problem || 'Talk to Dante hands-free (Ctrl+Shift+Space)'}
         >
-          <span className="material-symbols-outlined text-[16px]">{status && !status.ready ? 'error' : 'graphic_eq'}</span>
-          <span className="text-[11px] font-medium">{status && !status.ready ? 'Dante offline' : 'Dante ready'}</span>
+          <span className="material-symbols-outlined text-[18px]">{status && !status.ready ? 'error' : 'graphic_eq'}</span>
+          <span className="text-[13px] font-semibold">{status && !status.ready ? 'Dante offline' : 'Live'}</span>
         </button>
 
         {accessToken && (

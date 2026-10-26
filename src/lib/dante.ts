@@ -46,12 +46,13 @@ export function toSpeech(text: string) {
     .trim();
 }
 
-export function buildDanteContext(state: ZenosState, googleEvents: any[], userName: string, language: string) {
+export function buildDanteContext(state: ZenosState, googleEvents: any[], userName: string, language: string, mode: 'chat' | 'voice' = 'chat') {
   const now = new Date();
   const todayStr = today();
   const tasks = state.tasks;
   const done = tasks.filter(t => t.status === 'done');
   return {
+    mode,
     userName,
     language,
     now: {

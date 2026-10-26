@@ -32,7 +32,7 @@ type ScheduleItem = { key: string; date: string; time: string; title: string; su
 const rank = (t: Task, todayStr: string) => (!t.date ? 3 : t.date < todayStr ? 0 : t.date === todayStr ? 1 : 2);
 
 export default function Home() {
-  const { state, user, googleEvents, toggleTaskDone, setShowModal, setEditTaskId } = useZenos();
+  const { state, user, googleEvents, toggleTaskDone, setShowModal, setEditTaskId, setLiveOpen } = useZenos();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
   const status = useDanteStatus();
@@ -203,12 +203,12 @@ export default function Home() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
             {[
               { icon: 'calendar_clock', tone: 'text-primary', title: 'Plan my day', sub: 'Top 3 tasks, in order', q: 'Plan my day: pick the 3 most important tasks and suggest an order with time estimates.' },
-              { icon: 'mic', tone: 'text-tertiary', title: 'Talk to Dante', sub: 'Hands-free voice', voice: true },
+              { icon: 'graphic_eq', tone: 'text-tertiary', title: 'Go Live', sub: 'Talk hands-free', voice: true },
             ].map(a => (
               <button
                 key={a.title}
                 type="button"
-                onClick={() => (a.voice ? navigate('/dante', { state: { voice: true } }) : ask(a.q!))}
+                onClick={() => (a.voice ? setLiveOpen(true) : ask(a.q!))}
                 className="group flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all text-left cursor-pointer active:scale-[0.98]"
               >
                 <div className="flex items-center gap-2.5">
