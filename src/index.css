@@ -311,3 +311,12 @@ body {
   letter-spacing: 0.05em;
 }
 
+
+/* Landing motion stays in CSS: no scroll listeners, animation assets or layout work. */
+@keyframes landing-enter { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: no-preference) {
+  .landing-enter { animation: landing-enter .6s ease-out both; }
+  .landing-enter-late { animation-delay: .12s; }
+  .landing-feature { transition: transform .2s ease, box-shadow .2s ease; }
+  .landing-feature:hover { transform: translateY(-4px); box-shadow: var(--z-shadow); }
+}
