@@ -72,3 +72,6 @@ See `docs/ROADMAP.md`. Biggest: no payments/plans, Google Calendar token expires
 
 ## Account data controls
 Signed-in account menus (desktop sidebar and mobile header) expose JSON export and confirmed deletion via `useZenos()`. Export queries every page, including Dante messages outside the UI history limit. Apply `supabase-schema-update.sql` to install `delete_my_account()`: an authenticated-only SECURITY DEFINER function that deletes only `auth.uid()` from auth.users and cascades through all app tables atomically. No service-role key is needed. Local-mode data is kept separate and is not deleted.
+
+## Local workspace import
+`LocalImportDialog` offers import after a real account loads successfully, through `useZenos().importLocalWorkspace`. `src/lib/localImport.ts` reads the four local workspace keys, remembers decline per account in this browser, retains a snapshot/batch ID across failures, and clears unchanged imported keys only after success. Theme and local Dante history are retained. Apply `supabase-schema-update.sql` to install the authenticated, RLS-protected `import_local_data` transaction and import receipts. It matches category labels ignoring case/outer whitespace, maps task category IDs, and prevents retry duplicates. Embedded PostgreSQL tests use PGlite; browser lifecycle tests use jsdom.

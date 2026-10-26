@@ -1,3 +1,4 @@
+import LocalImportDialog from '../LocalImportDialog';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'motion/react';
@@ -66,7 +67,7 @@ export function PageLoader() {
 
 export default function AppShell() {
   const { pathname } = useLocation();
-  const { setLiveOpen } = useZenos();
+  const { setLiveOpen, localImportOpen } = useZenos();
 
   // Ctrl+Shift+Space opens Dante Live from anywhere
   useEffect(() => {
@@ -139,8 +140,9 @@ export default function AppShell() {
         ))}
       </nav>
 
+      <LocalImportDialog />
       <Modals />
-      <MorningBriefing />
+      {!localImportOpen && <MorningBriefing />}
       <DanteLive />
     </div>
   );

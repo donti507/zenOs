@@ -3,6 +3,7 @@ import { ZenosState, Task, Category, VaultItem, Meeting, DanteMessage } from '..
 import { today, localDateStr } from '../lib/utils';
 import { supabase, SUPABASE_CONFIGURED } from '../lib/supabase';
 import { exportAccountData, deleteAccountData, downloadAccountData } from '../lib/accountData';
+import { shouldOfferLocalImport, declineLocalImport, importLocalData } from '../lib/localImport';
 import { fetchGoogleCalendarEvents } from '../lib/googleCalendar';
 
 export const OFFLINE_USER_ID = 'offline-user-123';
@@ -134,6 +135,11 @@ interface ZenosContextType {
   syncError: string | null;
   loginWithGoogle: (withCalendar?: boolean) => Promise<void>;
   logOut: () => Promise<void>;
+  localImportOpen: boolean;
+  localImportBusy: boolean;
+  localImportError: string | null;
+  importLocalWorkspace: () => Promise<void>;
+  declineLocalWorkspace: () => void;
   exportMyData: () => Promise<void>;
   deleteMyAccount: () => Promise<void>;
   fetchGoogleEvents: () => Promise<void>;
@@ -161,6 +167,11 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const [localImportOpen, setLocalImportOpen] = useState(false);
+  const [localImportBusy, setLocalImportBusy] = useState(false);
+  const [localImportError, setLocalImportError] = useState<string | null>(null);
+  const importRunning = useRef(false);
+  const [cloudLoadedFor, setCloudLoadedFor] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [editTaskId, setEditTaskId] = useState<number | string | null>(null);
@@ -266,9 +277,46 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         })),
       }));
       setSyncError(null);
+      setCloudLoadedFor(userId);
     } catch (err) {
       reportError('Could not load your data from the cloud', err);
     }
+  };
+
+  useEffect(() => {
+    setLocalImportError(null);
+    if (!user || isOffline || cloudLoadedFor !== user.id || isLoadingData) {
+      setLocalImportOpen(false);
+      return;
+    }
+    try { setLocalImportOpen(shouldOfferLocalImport(localStorage, user.id)); }
+    catch { setLocalImportOpen(false); /* malformed or unavailable storage: preserve it */ }
+  }, [user?.id, isOffline, cloudLoadedFor, isLoadingData]);
+
+  const declineLocalWorkspace = () => {
+    if (importRunning.current || !userRef.current || offlineRef.current) return;
+    try {
+      declineLocalImport(localStorage, userRef.current.id);
+      setLocalImportOpen(false);
+      setLocalImportError(null);
+    } catch { setLocalImportError('Could not save your choice. Please allow browser storage and try again.'); }
+  };
+
+  const importLocalWorkspace = async () => {
+    if (importRunning.current || !userRef.current || offlineRef.current) return;
+    const userId = userRef.current.id;
+    importRunning.current = true;
+    setLocalImportBusy(true);
+    setLocalImportError(null);
+    try {
+      await importLocalData(supabase, localStorage, userId);
+      if (userRef.current?.id === userId) {
+        setLocalImportOpen(false);
+        await fetchUserData(userId);
+      }
+    } catch (err) {
+      if (userRef.current?.id === userId) setLocalImportError((err as Error).message);
+    } finally { importRunning.current = false; setLocalImportBusy(false); }
   };
 
   // Session tracking with Supabase Auth
@@ -704,6 +752,11 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         syncError,
         loginWithGoogle,
         logOut,
+        localImportOpen,
+        localImportBusy,
+        localImportError,
+        importLocalWorkspace,
+        declineLocalWorkspace,
         exportMyData,
         deleteMyAccount,
         fetchGoogleEvents,
