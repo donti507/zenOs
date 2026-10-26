@@ -222,7 +222,7 @@ export default function Login({ initialView = 'login', onRecovered }: { initialV
             </AnimatePresence>
           </div>
         </div>
-        <p className="text-[12px] text-on-surface-variant">{SUPABASE_CONFIGURED ? 'Your data syncs securely with your account.' : 'Running without a server: data stays in this browser.'}</p>
+        <p className="text-[12px] text-on-surface-variant"><a href="/privacy" className="hover:underline">Privacy</a> · <a href="/terms" className="hover:underline">Terms</a> · {SUPABASE_CONFIGURED ? 'Your data syncs securely with your account.' : 'Running without a server: data stays in this browser.'}</p>
       </div>
 
       {/* Visual side */}

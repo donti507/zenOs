@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ZenosProvider, useZenos } from './context/ZenosContext';
 import AppShell from './components/layout/AppShell';
 import Login from './pages/Login';
+import Legal from './pages/Legal';
 import DanteOrb from './components/DanteOrb';
 import { today } from './lib/utils';
 
@@ -28,6 +29,10 @@ function AppRoutes() {
       if (hours >= 5 && hours < 11 && !localStorage.getItem(key)) setShowBriefing(true);
     } catch { /* storage blocked */ }
   }, [user, isLoadingData, setShowBriefing]);
+
+  // Public pages, visible without signing in
+  const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (path === '/privacy' || path === '/terms') return <Legal page={path === '/privacy' ? 'privacy' : 'terms'} />;
 
   if (passwordRecovery) return <Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} />;
   if (!user) return <Login />;
