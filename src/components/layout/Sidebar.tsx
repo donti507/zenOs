@@ -1,3 +1,4 @@
+import AccountControls from '../AccountControls';
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useZenos } from '../../context/ZenosContext';
@@ -131,6 +132,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         {menuOpen && (
           <div className="absolute bottom-full left-0 mb-2 w-52 bg-surface-container-lowest rounded-xl shadow-lg ring-1 ring-outline-variant py-1 z-50" role="menu">
             <div className="px-3 py-2 text-[12px] text-on-surface-variant truncate">{user?.email}</div>
+            <AccountControls />
             <button
               className="w-full flex items-center gap-2 px-3 py-2 text-left text-error hover:bg-surface-container cursor-pointer"
               role="menuitem"

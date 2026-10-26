@@ -29,6 +29,7 @@ server/auth.ts            Supabase JWT check, rate limit, anonymous mode
 server/stt.ts             Speech-to-text proxy (Whisper-style)
 src/App.tsx               Routes (lazy pages), auth gate, password recovery
 src/context/ZenosContext.tsx   ALL app state + CRUD (Supabase or localStorage). Use its functions; never call supabase from pages.
+src/lib/accountData.ts     Complete paginated account export + self-deletion RPC (called through ZenosContext)
 src/lib/routes.ts         view <-> URL map (state.view stays in sync with the URL via RouteSync)
 src/lib/dante.ts          client streaming, context builder, action parsing, text helpers
 src/lib/danteActions.ts   executes Dante actions (shared by chat + Live)
@@ -63,8 +64,11 @@ Supported: `create_task, complete_task, reopen_task, update_task, create_meeting
 `LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT`. See `.env.example`.
 
 ## Known gaps / next work
-See `docs/ROADMAP.md`. Biggest: no automated tests, no payments/plans, Google Calendar token expires hourly, main JS chunk ~650 KB.
+See `docs/ROADMAP.md`. Biggest: no payments/plans, Google Calendar token expires hourly, main JS chunk ~650 KB.
 
 ## Working with two AI agents
 - Each task = its own git branch (`feat/…`, `fix/…`). Never let two agents edit the same branch at once.
 - Before finishing: update this file if you changed structure, rules or env vars, and add a line to `docs/CHANGELOG.md`.
+
+## Account data controls
+Signed-in account menus (desktop sidebar and mobile header) expose JSON export and confirmed deletion via `useZenos()`. Export queries every page, including Dante messages outside the UI history limit. Apply `supabase-schema-update.sql` to install `delete_my_account()`: an authenticated-only SECURITY DEFINER function that deletes only `auth.uid()` from auth.users and cascades through all app tables atomically. No service-role key is needed. Local-mode data is kept separate and is not deleted.

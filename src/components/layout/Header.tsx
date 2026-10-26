@@ -1,3 +1,4 @@
+import AccountControls from '../AccountControls';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useZenos } from '../../context/ZenosContext';
@@ -18,10 +19,11 @@ const SUBTITLES: Record<string, string> = {
 };
 
 export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean }) {
-  const { state, updateState, toggleTheme, setShowModal, setShowBriefing, accessToken, fetchGoogleEvents, user, setLiveOpen } = useZenos();
+  const { state, updateState, toggleTheme, setShowModal, setShowBriefing, accessToken, fetchGoogleEvents, user, setLiveOpen, logOut } = useZenos();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const status = useDanteStatus();
+  const [accountOpen, setAccountOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [creatingMeet, setCreatingMeet] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -145,6 +147,14 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
           <span className="material-symbols-outlined text-[18px]">add</span>
           <span className="hidden sm:inline">New task</span>
         </button>
+
+        <div className="relative md:hidden">
+          <button className="w-8 h-8 rounded-full bg-primary text-on-primary font-semibold" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen(v => !v)}>{name.slice(0, 1).toUpperCase()}</button>
+          {accountOpen && <div role="menu" className="absolute right-0 top-full mt-2 w-60 max-w-[90vw] bg-surface-container-lowest rounded-xl shadow-lg ring-1 ring-outline-variant py-1">
+            <AccountControls />
+            <button role="menuitem" className="w-full px-3 py-2 text-left text-on-surface hover:bg-surface-container" onClick={() => { setAccountOpen(false); logOut(); }}>Sign out</button>
+          </div>}
+        </div>
 
         <div className="hidden md:flex w-8 h-8 rounded-full bg-primary items-center justify-center ml-1" title={name}>
           <span className="text-on-primary text-[12px] font-semibold">{name.slice(0, 1).toUpperCase()}</span>
