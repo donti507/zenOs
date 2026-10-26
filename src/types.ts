@@ -10,6 +10,7 @@ export interface Task {
   progress: number;
   steps?: { label: string; done: boolean }[];
   completedAt?: string | null;
+  postponedCount?: number;
   recurrence?: Recurrence;
   recurrenceSourceId?: string | null;
   recurrenceDay?: number | null;

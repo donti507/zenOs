@@ -135,11 +135,11 @@ BEGIN
     IF item->>'id' IS NOT NULL THEN task_map := task_map || pg_catalog.jsonb_build_object(item->>'id', gen_random_uuid()::text); END IF;
   END LOOP;
   FOR item IN SELECT value FROM pg_catalog.jsonb_array_elements(payload->'tasks') LOOP
-    INSERT INTO public.tasks(id, user_id, title, cat, status, date, reminder, note, progress, steps, completed_at, recurrence, recurrence_day, recurrence_source_id)
+    INSERT INTO public.tasks(id, user_id, title, cat, status, date, reminder, note, progress, steps, completed_at, recurrence, recurrence_day, recurrence_source_id, postponed_count)
     VALUES (COALESCE((task_map->>(item->>'id'))::uuid, gen_random_uuid()), uid, item->>'title', COALESCE(category_map->>(item->>'cat'), item->>'cat', 'other'),
       COALESCE(item->>'status', 'todo'), item->>'date', item->>'reminder', item->>'note',
       COALESCE((item->>'progress')::integer, 0), COALESCE(item->'steps', '[]'::jsonb), (item->>'completedAt')::timestamptz,
-      COALESCE(item->>'recurrence', 'none'), (item->>'recurrenceDay')::smallint, (task_map->>(item->>'recurrenceSourceId'))::uuid);
+      COALESCE(item->>'recurrence', 'none'), (item->>'recurrenceDay')::smallint, (task_map->>(item->>'recurrenceSourceId'))::uuid, COALESCE((item->>'postponedCount')::integer, 0));
   END LOOP;
   FOR item IN SELECT value FROM pg_catalog.jsonb_array_elements(payload->'meetings') LOOP
     INSERT INTO public.meetings(user_id, person_name, date, time, subject, status, elapsed_seconds, notes, google_event_id, created_at)
@@ -252,3 +252,28 @@ $$;
 DROP TRIGGER IF EXISTS tasks_create_next_occurrence ON public.tasks;
 CREATE TRIGGER tasks_create_next_occurrence AFTER UPDATE OF status ON public.tasks
   FOR EACH ROW EXECUTE FUNCTION public.create_next_task_occurrence();
+
+-- 10. Count actual later-date transitions, including concurrent or non-UI edits.
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS postponed_count integer NOT NULL DEFAULT 0 CHECK (postponed_count >= 0);
+CREATE OR REPLACE FUNCTION public.track_task_postponement()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE
+  old_due date;
+  new_due date;
+BEGIN
+  NEW.postponed_count := OLD.postponed_count;
+  IF OLD.date IS NOT DISTINCT FROM NEW.date THEN RETURN NEW; END IF;
+  IF OLD.date ~ '^\d{4}-\d{2}-\d{2}$' AND NEW.date ~ '^\d{4}-\d{2}-\d{2}$' THEN
+    BEGIN
+      old_due := OLD.date::date;
+      new_due := NEW.date::date;
+      IF new_due > old_due THEN NEW.postponed_count := least(OLD.postponed_count::bigint + 1, 2147483647)::integer; END IF;
+    EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN NULL;
+    END;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS tasks_track_postponement ON public.tasks;
+CREATE TRIGGER tasks_track_postponement BEFORE UPDATE ON public.tasks
+  FOR EACH ROW EXECUTE FUNCTION public.track_task_postponement();

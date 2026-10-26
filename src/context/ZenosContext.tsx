@@ -1,3 +1,4 @@
+import { useFocusTimer, type FocusSession } from '../hooks/useFocusTimer';
 import { useTaskNotifications } from '../hooks/useTaskNotifications';
 import { isRecurrence, calendarDate, updateTaskOccurrence } from '../lib/recurrence';
 import type { DanteUsage } from '../../shared/danteUsage';
@@ -75,6 +76,7 @@ const mapTask = (t: any): Task => ({
   progress: t.progress || 0,
   steps: t.steps || [],
   completedAt: t.completed_at || t.completedAt || null,
+  postponedCount: t.postponed_count || 0,
   recurrence: isRecurrence(t.recurrence) ? t.recurrence : 'none',
   recurrenceSourceId: t.recurrence_source_id || t.recurrenceSourceId || null,
   recurrenceDay: t.recurrence_day || t.recurrenceDay || null,
@@ -115,6 +117,9 @@ const completionLogFromTasks = (tasks: Task[]) =>
 export type NewMeeting = Omit<Meeting, 'id' | 'createdAt'>;
 
 interface ZenosContextType {
+  focusSession: FocusSession | null;
+  startTaskFocus: (taskId: Task['id']) => void;
+  stopTaskFocus: () => void;
   state: ZenosState;
   updateState: (updates: Partial<ZenosState>) => void;
   toggleTheme: () => void;
@@ -212,6 +217,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   offlineRef.current = isOffline;
   const userRef = useRef(user);
   userRef.current = user;
+  const focus = useFocusTimer(user?.id || null);
   const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
 
   const reportError = (what: string, err: unknown) => {
@@ -537,7 +543,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   // ---------- Tasks ----------
   const addTask = async (taskData: Omit<Task, 'id'>): Promise<Task | null> => {
     if (!userRef.current) return null;
-    taskData = { ...taskData, recurrence: isRecurrence(taskData.recurrence) ? taskData.recurrence : 'none' };
+    taskData = { ...taskData, postponedCount: 0, recurrence: isRecurrence(taskData.recurrence) ? taskData.recurrence : 'none' };
     if (taskData.recurrence !== 'none' && !calendarDate(taskData.date)) taskData.date = today();
     taskData.recurrenceDay = calendarDate(taskData.date)?.getDate() || null;
     if (offlineRef.current) {
@@ -785,6 +791,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     <ZenosContext.Provider
       value={{
         state,
+        focusSession: focus.focusSession,
+        startTaskFocus: id => { const task = stateRef.current.tasks.find(t => t.id === id); if (task) focus.startFocus(task); },
+        stopTaskFocus: focus.stopFocus,
         updateState,
         toggleTheme,
         toggleTaskDone,
