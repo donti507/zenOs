@@ -1,11 +1,12 @@
-import { lazy, useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ZenosProvider, useZenos } from './context/ZenosContext';
-import AppShell from './components/layout/AppShell';
-import Login from './pages/Login';
+import AppShell, { PageLoader } from './components/layout/AppShell';
 import Legal from './pages/Legal';
 import DanteOrb from './components/DanteOrb';
 import { today } from './lib/utils';
+
+const Login = lazy(() => import('./pages/Login'));
 
 // Each page is its own chunk and only loads when opened
 const Home = lazy(() => import('./pages/Home'));
@@ -34,8 +35,8 @@ function AppRoutes() {
   const path = typeof window !== 'undefined' ? window.location.pathname : '/';
   if (path === '/privacy' || path === '/terms') return <Legal page={path === '/privacy' ? 'privacy' : 'terms'} />;
 
-  if (passwordRecovery) return <Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} />;
-  if (!user) return <Login />;
+  if (passwordRecovery) return <Suspense fallback={<PageLoader />}><Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} /></Suspense>;
+  if (!user) return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
 
   if (isLoadingData) {
     return (

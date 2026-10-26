@@ -64,7 +64,7 @@ Supported: `create_task, complete_task, reopen_task, update_task, create_meeting
 `LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT`. See `.env.example`.
 
 ## Known gaps / next work
-See `docs/ROADMAP.md`. Biggest: no payments/plans, Google Calendar token expires hourly, main JS chunk ~650 KB.
+See `docs/ROADMAP.md`. Biggest: no payments/plans, Google Calendar token expires hourly.
 
 ## Working with two AI agents
 - Each task = its own git branch (`feat/…`, `fix/…`). Never let two agents edit the same branch at once.
@@ -75,3 +75,6 @@ Signed-in account menus (desktop sidebar and mobile header) expose JSON export a
 
 ## Local workspace import
 `LocalImportDialog` offers import after a real account loads successfully, through `useZenos().importLocalWorkspace`. `src/lib/localImport.ts` reads the four local workspace keys, remembers decline per account in this browser, retains a snapshot/batch ID across failures, and clears unchanged imported keys only after success. Theme and local Dante history are retained. Apply `supabase-schema-update.sql` to install the authenticated, RLS-protected `import_local_data` transaction and import receipts. It matches category labels ignoring case/outer whitespace, maps task category IDs, and prevents retry duplicates. Embedded PostgreSQL tests use PGlite; browser lifecycle tests use jsdom.
+
+## Client bundle loading
+Login (including password recovery) is lazy with a loading fallback. AppShell lazy-loads Modals, MorningBriefing and DanteLive through `OnFirstOpen`: it defers their first render until opened, then keeps them mounted so close effects, animations and local state survive. Vite groups React/router, Motion and Supabase into separate vendor chunks. The main app chunk is about 57 kB minified (vendor chunks are additional initial downloads).

@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-26: Lazy-loaded Login and first-use overlays with Suspense, retained overlay close behavior, and split React/Motion/Supabase vendor chunks; main JS reduced from 679.29 kB to 56.83 kB (gzip 203.85 to 17.53 kB), with lifecycle tests. (Codex)
+
 - 2026-10-26: Added a one-time per-account local/demo workspace import dialog, atomic retry-safe Supabase import with category label mapping, safe local-key cleanup, and PostgreSQL/browser lifecycle tests. Apply the updated SQL migration. (Codex)
 
 - 2026-10-26: Added signed-in account JSON export (all saved rows, including full Dante history) and confirmed atomic account deletion with sign-out, desktop/mobile menus, and regression tests; requires the updated Supabase SQL migration. (Codex)
