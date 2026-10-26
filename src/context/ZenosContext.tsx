@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { ZenosState, Task, Category, VaultItem, Meeting, DanteMessage } from '../types';
 import { today, localDateStr } from '../lib/utils';
 import { supabase, SUPABASE_CONFIGURED } from '../lib/supabase';
+import { exportAccountData, deleteAccountData, downloadAccountData } from '../lib/accountData';
 import { fetchGoogleCalendarEvents } from '../lib/googleCalendar';
 
 export const OFFLINE_USER_ID = 'offline-user-123';
@@ -133,6 +134,8 @@ interface ZenosContextType {
   syncError: string | null;
   loginWithGoogle: (withCalendar?: boolean) => Promise<void>;
   logOut: () => Promise<void>;
+  exportMyData: () => Promise<void>;
+  deleteMyAccount: () => Promise<void>;
   fetchGoogleEvents: () => Promise<void>;
   loginOffline: (email?: string, name?: string) => void;
   showBriefing: boolean;
@@ -386,6 +389,32 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       setGoogleEvents([]);
       setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
     }
+  };
+
+  const requireCloudAccount = () => {
+    if (!userRef.current || offlineRef.current) throw new Error('Sign in to manage your account.');
+    return userRef.current.id as string;
+  };
+
+  const exportMyData = async () => {
+    const id = requireCloudAccount();
+    const data = await exportAccountData(supabase, id);
+    // Do not download another session's data if the user changed during export.
+    if (userRef.current?.id !== id) throw new Error('Your session changed. Please try again.');
+    downloadAccountData(data, localDateStr());
+  };
+
+  const deleteMyAccount = async () => {
+    requireCloudAccount();
+    await deleteAccountData(supabase);
+    // The deleted user's refresh token is no longer valid. Clear the local session.
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    setUser(null);
+    setAccessTokenState(null);
+    setGoogleEvents([]);
+    setLiveOpen(false);
+    setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
+    if (error) throw new Error('Account deleted, but session cleanup failed. Please reload the page.');
   };
 
   const getAuthToken = useCallback(async () => {
@@ -675,6 +704,8 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         syncError,
         loginWithGoogle,
         logOut,
+        exportMyData,
+        deleteMyAccount,
         fetchGoogleEvents,
         loginOffline,
         showBriefing,

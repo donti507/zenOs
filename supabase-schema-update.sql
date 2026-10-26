@@ -61,3 +61,26 @@ CREATE POLICY "Users see own categories" ON categories
 DROP POLICY IF EXISTS "Users see own vault" ON vault_items;
 CREATE POLICY "Users see own vault" ON vault_items
   FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- 6. Self-service account deletion. No client-supplied user ID or admin key.
+-- Deleting the auth user cascades to all app tables, including briefing metadata.
+CREATE OR REPLACE FUNCTION public.delete_my_account()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  current_user_id uuid := auth.uid();
+BEGIN
+  IF current_user_id IS NULL THEN
+    RAISE EXCEPTION 'Authentication required' USING ERRCODE = '42501';
+  END IF;
+  DELETE FROM auth.users WHERE id = current_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Account not found';
+  END IF;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.delete_my_account() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_my_account() TO authenticated;
