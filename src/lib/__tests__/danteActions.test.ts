@@ -92,3 +92,18 @@ describe('runDanteActions', () => {
     expect(await runDanteActions(many, deps)).toHaveLength(10);
   });
 });
+
+describe('Dante repeat actions', () => {
+  it.each(['none','daily','weekdays','weekly','monthly'])('creates and updates tasks with repeat=%s', async repeat => {
+    const deps=setup();
+    const results=await runDanteActions([{action:'create_task',data:{title:'Routine',repeat}},{action:'update_task',data:{id:'t1',repeat}}],deps);
+    expect(results.every(r=>r.ok)).toBe(true);
+    expect(deps.addTask).toHaveBeenCalledWith(expect.objectContaining({recurrence:repeat}));
+    expect(deps.editTask).toHaveBeenCalledWith('t1',expect.objectContaining({recurrence:repeat}));
+  });
+  it('rejects invalid repeat values before writing',async()=>{
+    const deps=setup();
+    const results=await runDanteActions([{action:'create_task',data:{title:'Routine',repeat:'yearly'}},{action:'update_task',data:{id:'t1',repeat:{daily:true}}}],deps);
+    expect(results.every(r=>!r.ok)).toBe(true);expect(deps.addTask).not.toHaveBeenCalled();expect(deps.editTask).not.toHaveBeenCalled();
+  });
+});

@@ -1,3 +1,4 @@
+import { isRecurrence } from './recurrence';
 import { Task, Meeting, ZenosState } from '../types';
 import { today } from './utils';
 import { DanteAction } from './dante';
@@ -45,12 +46,14 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
     const d = a.data || {};
     switch (a.action) {
       case "create_task": {
+        if (d.repeat !== undefined && !isRecurrence(d.repeat)) return { label: 'Create task', ok: false, detail: 'Invalid repeat option' };
         if (!d.title) return { label: "Create task", ok: false, detail: "No title given" };
         const t = await addTask({
           title: String(d.title).slice(0, 200),
           cat: resolveCategory(d.cat),
           status: "todo",
           date: validDate(d.date) || today(),
+          recurrence: d.repeat ?? "none",
           reminder: "",
           note: d.note ? String(d.note) : "",
           progress: 0,
@@ -70,7 +73,9 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
       case "update_task": {
         const t = findTask(d);
         if (!t) return { label: "Update task", ok: false, detail: `No single task matches “${d.title || d.id || ""}”` };
+        if (d.repeat !== undefined && !isRecurrence(d.repeat)) return { label: 'Update task', ok: false, detail: 'Invalid repeat option' };
         const updates: Partial<Task> = {};
+        if (d.repeat !== undefined) updates.recurrence = d.repeat;
         if (d.newTitle || (d.title && d.id)) updates.title = String(d.newTitle || d.title);
         if (validDate(d.date)) updates.date = d.date;
         if (["todo", "inprogress", "done"].includes(d.status)) updates.status = d.status;

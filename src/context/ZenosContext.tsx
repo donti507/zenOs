@@ -1,3 +1,5 @@
+import { useTaskNotifications } from '../hooks/useTaskNotifications';
+import { isRecurrence, calendarDate, updateTaskOccurrence } from '../lib/recurrence';
 import type { DanteUsage } from '../../shared/danteUsage';
 import { DANTE_USAGE_CHANGED } from '../lib/usageEvents';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
@@ -73,6 +75,9 @@ const mapTask = (t: any): Task => ({
   progress: t.progress || 0,
   steps: t.steps || [],
   completedAt: t.completed_at || t.completedAt || null,
+  recurrence: isRecurrence(t.recurrence) ? t.recurrence : 'none',
+  recurrenceSourceId: t.recurrence_source_id || t.recurrenceSourceId || null,
+  recurrenceDay: t.recurrence_day || t.recurrenceDay || null,
 });
 
 const mapMeeting = (m: any): Meeting => ({
@@ -150,6 +155,10 @@ interface ZenosContextType {
   setShowBriefing: (show: boolean) => void;
   saveDanteMessage: (role: 'user' | 'assistant', content: string) => Promise<DanteMessage>;
   clearDanteHistory: () => Promise<void>;
+  notificationPermission: NotificationPermission | 'unsupported';
+  canAskNotifications: boolean;
+  enableTaskNotifications: () => Promise<void>;
+  dismissTaskNotifications: () => void;
   getAuthToken: () => Promise<string | null>;
   danteUsage: DanteUsage | null;
   danteUsageError: string | null;
@@ -179,6 +188,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const [cloudLoadedFor, setCloudLoadedFor] = useState<string | null>(null);
   const [usageState, setUsageState] = useState<{ userId: string | null; data: DanteUsage | null; error: string | null }>({ userId: null, data: null, error: null });
   const usageRequest = useRef(0);
+  const taskReloadRequest = useRef(0);
   const [mounted, setMounted] = useState(false);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [editTaskId, setEditTaskId] = useState<number | string | null>(null);
@@ -202,6 +212,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   offlineRef.current = isOffline;
   const userRef = useRef(user);
   userRef.current = user;
+  const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
 
   const reportError = (what: string, err: unknown) => {
     console.error(what, err);
@@ -526,6 +537,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   // ---------- Tasks ----------
   const addTask = async (taskData: Omit<Task, 'id'>): Promise<Task | null> => {
     if (!userRef.current) return null;
+    taskData = { ...taskData, recurrence: isRecurrence(taskData.recurrence) ? taskData.recurrence : 'none' };
+    if (taskData.recurrence !== 'none' && !calendarDate(taskData.date)) taskData.date = today();
+    taskData.recurrenceDay = calendarDate(taskData.date)?.getDate() || null;
     if (offlineRef.current) {
       const task: Task = { ...taskData, id: newId(), steps: taskData.steps || [] };
       setState(s => ({ ...s, tasks: [...s.tasks, task] }));
@@ -541,6 +555,8 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
           status: taskData.status,
           date: taskData.date,
           reminder: taskData.reminder,
+          recurrence: taskData.recurrence,
+          recurrence_day: taskData.recurrenceDay,
           note: taskData.note,
           progress: taskData.progress,
           steps: taskData.steps || [],
@@ -558,37 +574,45 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const reloadCloudTasks = async (userId: string) => {
+    const request = ++taskReloadRequest.current;
+    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    if (userRef.current?.id !== userId || request !== taskReloadRequest.current) return;
+    const tasks = (data || []).map(mapTask);
+    setState(s => ({ ...s, tasks, completionLog: completionLogFromTasks(tasks) }));
+  };
+
   const editTask = async (id: number | string, rawUpdates: Partial<Task>) => {
     if (!userRef.current) return;
-    // Keep completedAt in sync when the status is changed from the edit form
     const prev = stateRef.current.tasks.find(t => t.id === id);
-    const updates: Partial<Task> = { ...rawUpdates };
-    if (prev && updates.status && updates.status !== prev.status && updates.completedAt === undefined) {
-      updates.completedAt = updates.status === 'done' ? new Date().toISOString() : null;
-      if (updates.status === 'done') setState(s => ({ ...s, completionLog: [...s.completionLog, today()] }));
+    if (!prev) return;
+    const updates = { ...rawUpdates };
+    if (updates.recurrence !== undefined && !isRecurrence(updates.recurrence)) throw new Error('Invalid repeat option');
+    if ((updates.recurrence || prev.recurrence || 'none') !== 'none' && !calendarDate(updates.date ?? prev.date)) updates.date = today();
+    if ((updates.date !== undefined && updates.date !== prev.date) || (updates.recurrence !== undefined && updates.recurrence !== (prev.recurrence || 'none'))) {
+      updates.recurrenceDay = calendarDate(updates.date ?? prev.date)?.getDate() || null;
     }
-    const apply = () => setState(s => ({ ...s, tasks: s.tasks.map(t => (t.id === id ? { ...t, ...updates } : t)) }));
-    if (offlineRef.current) return apply();
+    if (updates.status && updates.status !== prev.status && updates.completedAt === undefined) updates.completedAt = updates.status === 'done' ? new Date().toISOString() : null;
+    if (offlineRef.current) {
+      setState(s => {
+        const newlyDone = s.tasks.find(task => task.id === id)?.status !== 'done' && updates.status === 'done';
+        const tasks = updateTaskOccurrence(s.tasks, id, updates, newId);
+        return { ...s, tasks, completionLog: newlyDone ? [...s.completionLog, today()] : s.completionLog };
+      });
+      return;
+    }
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .update(compact({
-          title: updates.title,
-          cat: updates.cat,
-          status: updates.status,
-          date: updates.date,
-          reminder: updates.reminder,
-          note: updates.note,
-          progress: updates.progress,
-          steps: updates.steps,
-          completed_at: updates.completedAt,
-        }))
-        .eq('id', id);
+      const userId = userRef.current.id;
+      const { error } = await supabase.from('tasks').update(compact({
+        title: updates.title, cat: updates.cat, status: updates.status, date: updates.date,
+        reminder: updates.reminder, note: updates.note, progress: updates.progress, steps: updates.steps,
+        completed_at: updates.completedAt, recurrence: updates.recurrence, recurrence_day: updates.recurrenceDay,
+      })).eq('id', id);
       if (error) throw error;
-      apply();
-    } catch (err) {
-      reportError('Could not update task', err);
-    }
+      // The database creates the next occurrence atomically; fetch it with its real ID.
+      await reloadCloudTasks(userId);
+    } catch (err) { reportError('Could not update task', err); }
   };
 
   const deleteTask = async (id: number | string) => {
@@ -608,25 +632,11 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     const task = stateRef.current.tasks.find(t => t.id === id);
     if (!task || !userRef.current) return;
     const isDone = task.status === 'done';
-    const status = isDone ? ('inprogress' as const) : ('done' as const);
-    const progress = isDone ? (task.progress === 100 ? 50 : task.progress) : 100;
-    const completedAt = isDone ? null : new Date().toISOString();
-
-    const apply = () =>
-      setState(s => ({
-        ...s,
-        tasks: s.tasks.map(t => (t.id === id ? { ...t, status, progress, completedAt } : t)),
-        completionLog: isDone ? s.completionLog : [...s.completionLog, today()],
-      }));
-
-    if (offlineRef.current) return apply();
-    try {
-      const { error } = await supabase.from('tasks').update({ status, progress, completed_at: completedAt }).eq('id', id);
-      if (error) throw error;
-      apply();
-    } catch (err) {
-      reportError('Could not update task', err);
-    }
+    await editTask(id, {
+      status: isDone ? 'inprogress' : 'done',
+      progress: isDone ? (task.progress === 100 ? 50 : task.progress) : 100,
+      completedAt: isDone ? null : new Date().toISOString(),
+    });
   };
 
   // ---------- Categories ----------
@@ -814,6 +824,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         setShowBriefing,
         saveDanteMessage,
         clearDanteHistory,
+        ...taskNotifications,
         getAuthToken,
         danteUsage: usageState.userId === user?.id ? usageState.data : null,
         danteUsageError: usageState.userId === user?.id ? usageState.error : null,

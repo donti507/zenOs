@@ -1,3 +1,4 @@
+import type { Recurrence } from './lib/recurrence';
 export interface Task {
   id: number | string;
   title: string;
@@ -9,6 +10,9 @@ export interface Task {
   progress: number;
   steps?: { label: string; done: boolean }[];
   completedAt?: string | null;
+  recurrence?: Recurrence;
+  recurrenceSourceId?: string | null;
+  recurrenceDay?: number | null;
 }
 
 export interface Category {

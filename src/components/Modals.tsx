@@ -1,3 +1,4 @@
+import { RECURRENCES } from '../lib/recurrence';
 import { useEffect, useState } from 'react';
 import { useZenos } from '../context/ZenosContext';
 import { createGoogleCalendarEvent } from '../lib/googleCalendar';
@@ -7,7 +8,7 @@ import { Modal, Field, Icon, btn, input, textarea } from './ui/kit';
 
 type TaskForm = Omit<Task, 'id'>;
 const emptyTask = (cat: string, date: string): TaskForm => ({
-  title: '', cat, status: 'todo', date, reminder: '', note: '', progress: 0, steps: [],
+  title: '', cat, status: 'todo', recurrence: 'none', date, reminder: '', note: '', progress: 0, steps: [],
 });
 
 const PALETTE = ['#5b5fef', '#3b82f6', '#a855f7', '#f97316', '#10b981', '#ef4444', '#eab308', '#64748b'];
@@ -34,7 +35,7 @@ function MeetLink({ url }: { url: string }) {
 export default function Modals() {
   const {
     state, showModal, setShowModal, editTaskId, setEditTaskId, addTask, editTask, deleteTask,
-    addCategory, updateState, addMeeting, fetchGoogleEvents, accessToken,
+    addCategory, updateState, addMeeting, fetchGoogleEvents, accessToken, canAskNotifications, enableTaskNotifications, notificationPermission,
   } = useZenos();
 
   const close = () => {
@@ -62,6 +63,7 @@ export default function Modals() {
 
   const saveTask = async () => {
     if (!task.title.trim()) return;
+    if (task.reminder && task.status !== 'done' && canAskNotifications) void enableTaskNotifications();
     const doneSteps = (task.steps || []).filter(s => s.done).length;
     const data = { ...task, title: task.title.trim() };
     // Progress follows the checklist when there is one
@@ -182,11 +184,19 @@ export default function Modals() {
           <Field label="Due date">
             <input type="date" className={input} value={task.date} onChange={e => setTask({ ...task, date: e.target.value })} />
           </Field>
+          <Field label="Repeat">
+            <select className={input} value={task.recurrence || 'none'} onChange={e => setTask({ ...task, recurrence: e.target.value as Task['recurrence'], date: task.date || today() })}>
+              {RECURRENCES.map(rule => <option key={rule} value={rule}>{rule === 'none' ? 'None' : rule[0].toUpperCase() + rule.slice(1)}</option>)}
+            </select>
+          </Field>
           <Field label="Reminder">
             <input type="datetime-local" className={input} value={task.reminder} onChange={e => setTask({ ...task, reminder: e.target.value })} />
           </Field>
         </div>
 
+        {task.reminder && <p className="text-xs text-on-surface-variant">
+          Reminders use your local time and work while the app is open. {notificationPermission === 'denied' ? 'Notifications are blocked; change your browser’s site settings to enable them.' : notificationPermission === 'unsupported' ? 'This browser does not support task notifications.' : canAskNotifications ? 'Saving this reminder will ask for notification permission once.' : notificationPermission === 'granted' ? 'Browser notifications are enabled.' : 'You can enable notifications in your browser’s site settings.'}
+        </p>}
         <Field label={`Checklist${steps.length ? ` · ${steps.filter(s => s.done).length}/${steps.length}` : ''}`}>
           <div className="flex flex-col gap-1">
             {steps.map((s, i) => (
