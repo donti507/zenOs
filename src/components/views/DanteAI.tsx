@@ -1,3 +1,4 @@
+import DanteUsageNotice from '../DanteUsageNotice';
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -332,6 +333,7 @@ export default function DanteAI() {
 
   return (
     <div className="flex flex-col h-full bg-surface-container-lowest md:rounded-xl shadow-soft overflow-hidden">
+      <DanteUsageNotice />
       {/* Header */}
       <div className="px-4 py-3 border-b border-outline-variant flex items-center gap-3 bg-surface-container-lowest shrink-0 select-none">
         <DanteOrb

@@ -1,3 +1,4 @@
+import { notifyDanteUsage } from './usageEvents';
 import { ZenosState, DanteMessage } from '../types';
 import { today, computeStreak } from './utils';
 
@@ -92,7 +93,8 @@ export async function streamDante(opts: {
   signal: AbortSignal;
   onText: (full: string) => void;
 }): Promise<string> {
-  const res = await fetch('/api/dante', {
+  let res: Response;
+  try { res = await fetch('/api/dante', {
     method: 'POST',
     signal: opts.signal,
     headers: {
@@ -100,7 +102,7 @@ export async function streamDante(opts: {
       ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
     },
     body: JSON.stringify({ messages: opts.messages, context: opts.context }),
-  });
+  }); } finally { notifyDanteUsage(); }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

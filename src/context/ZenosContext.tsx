@@ -1,3 +1,5 @@
+import type { DanteUsage } from '../../shared/danteUsage';
+import { DANTE_USAGE_CHANGED } from '../lib/usageEvents';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { ZenosState, Task, Category, VaultItem, Meeting, DanteMessage } from '../types';
 import { today, localDateStr } from '../lib/utils';
@@ -149,6 +151,9 @@ interface ZenosContextType {
   saveDanteMessage: (role: 'user' | 'assistant', content: string) => Promise<DanteMessage>;
   clearDanteHistory: () => Promise<void>;
   getAuthToken: () => Promise<string | null>;
+  danteUsage: DanteUsage | null;
+  danteUsageError: string | null;
+  refreshDanteUsage: () => Promise<DanteUsage | null>;
   liveOpen: boolean;
   setLiveOpen: (open: boolean) => void;
   passwordRecovery: boolean;
@@ -172,6 +177,8 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const [localImportError, setLocalImportError] = useState<string | null>(null);
   const importRunning = useRef(false);
   const [cloudLoadedFor, setCloudLoadedFor] = useState<string | null>(null);
+  const [usageState, setUsageState] = useState<{ userId: string | null; data: DanteUsage | null; error: string | null }>({ userId: null, data: null, error: null });
+  const usageRequest = useRef(0);
   const [mounted, setMounted] = useState(false);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [editTaskId, setEditTaskId] = useState<number | string | null>(null);
@@ -471,6 +478,48 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     return data?.session?.access_token ?? null;
   }, []);
 
+  const refreshDanteUsage = useCallback(async (): Promise<DanteUsage | null> => {
+    const userId = userRef.current?.id || null;
+    const request = ++usageRequest.current;
+    if (!userId || offlineRef.current) {
+      const data: DanteUsage | null = userId ? { enabled: false } : null;
+      setUsageState({ userId, data, error: null });
+      return data;
+    }
+    try {
+      const token = await getAuthToken();
+      if (!token) throw new Error('Sign in again to check today’s usage.');
+      if (userRef.current?.id !== userId) return null;
+      const response = await fetch('/api/dante/usage', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+      const body = await response.json();
+      if (!response.ok) throw new Error('Today’s usage is temporarily unavailable.');
+      if (userRef.current?.id !== userId || request !== usageRequest.current) return null;
+      setUsageState({ userId, data: body, error: null });
+      return body;
+    } catch (error) {
+      if (userRef.current?.id === userId && request === usageRequest.current) {
+        setUsageState({ userId, data: null, error: (error as Error).message });
+      }
+      return null;
+    }
+  }, [getAuthToken]);
+
+  useEffect(() => {
+    const refresh = () => { void refreshDanteUsage(); };
+    refresh();
+    window.addEventListener(DANTE_USAGE_CHANGED, refresh);
+    window.addEventListener('focus', refresh);
+    return () => { window.removeEventListener(DANTE_USAGE_CHANGED, refresh); window.removeEventListener('focus', refresh); };
+  }, [user?.id, refreshDanteUsage]);
+
+  const resetsAt = usageState.data?.enabled ? usageState.data.resetsAt : null;
+  useEffect(() => {
+    if (!resetsAt) return;
+    const delay = Math.max(1000, new Date(resetsAt).getTime() - Date.now() + 100);
+    const timer = setTimeout(() => { void refreshDanteUsage(); }, Math.min(delay, 2147483647));
+    return () => clearTimeout(timer);
+  }, [resetsAt, refreshDanteUsage]);
+
   const updateState = (updates: Partial<ZenosState>) => setState(s => ({ ...s, ...updates }));
   const toggleTheme = () => setState(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
 
@@ -766,6 +815,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         saveDanteMessage,
         clearDanteHistory,
         getAuthToken,
+        danteUsage: usageState.userId === user?.id ? usageState.data : null,
+        danteUsageError: usageState.userId === user?.id ? usageState.error : null,
+        refreshDanteUsage,
         liveOpen,
         setLiveOpen,
         passwordRecovery,

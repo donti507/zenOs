@@ -152,3 +152,53 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.import_local_data(jsonb, uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.import_local_data(jsonb, uuid) TO authenticated;
+
+-- 8. Daily Dante quotas. Browser clients may read only their own counters.
+CREATE TABLE IF NOT EXISTS public.dante_usage (
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  date date NOT NULL,
+  messages integer NOT NULL DEFAULT 0 CHECK (messages >= 0),
+  transcriptions integer NOT NULL DEFAULT 0 CHECK (transcriptions >= 0),
+  PRIMARY KEY (user_id, date)
+);
+ALTER TABLE public.dante_usage ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users see own Dante usage" ON public.dante_usage;
+CREATE POLICY "Users see own Dante usage" ON public.dante_usage
+  FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+REVOKE ALL ON public.dante_usage FROM anon, authenticated;
+GRANT SELECT ON public.dante_usage TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.dante_usage TO service_role;
+
+-- Only the server's service role may reserve usage. Row locking serializes calls
+-- across processes; over-limit attempts do not increment or reach the AI provider.
+CREATE OR REPLACE FUNCTION public.consume_dante_usage(p_user_id uuid, p_kind text, p_limit integer)
+RETURNS TABLE (allowed boolean, date date, messages integer, transcriptions integer)
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+  usage_date date := (now() AT TIME ZONE 'UTC')::date;
+  usage_row public.dante_usage%ROWTYPE;
+BEGIN
+  IF p_kind NOT IN ('messages', 'transcriptions') OR p_kind IS NULL OR p_limit IS NULL OR p_limit < 1 THEN
+    RAISE EXCEPTION 'Invalid usage reservation';
+  END IF;
+  INSERT INTO public.dante_usage(user_id, date) VALUES (p_user_id, usage_date)
+    ON CONFLICT ON CONSTRAINT dante_usage_pkey DO NOTHING;
+  SELECT u.* INTO STRICT usage_row FROM public.dante_usage u
+    WHERE u.user_id = p_user_id AND u.date = usage_date FOR UPDATE;
+  IF (p_kind = 'messages' AND usage_row.messages >= p_limit)
+    OR (p_kind = 'transcriptions' AND usage_row.transcriptions >= p_limit) THEN
+    RETURN QUERY SELECT false, usage_row.date, usage_row.messages, usage_row.transcriptions;
+    RETURN;
+  END IF;
+  UPDATE public.dante_usage AS u SET
+    messages = u.messages + CASE WHEN p_kind = 'messages' THEN 1 ELSE 0 END,
+    transcriptions = u.transcriptions + CASE WHEN p_kind = 'transcriptions' THEN 1 ELSE 0 END
+    WHERE u.user_id = p_user_id AND u.date = usage_date RETURNING u.* INTO usage_row;
+  RETURN QUERY SELECT true, usage_row.date, usage_row.messages, usage_row.transcriptions;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.consume_dante_usage(uuid, text, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_dante_usage(uuid, text, integer) TO service_role;
