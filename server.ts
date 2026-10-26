@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { initServerMonitoring, captureServerError, captureExpressError } from './server/monitoring';
 import path from 'path';
 import fs from 'fs';
 import { loadLLMConfig, describeConfigProblem, streamChat, LLMError, type ChatMessage } from './server/llm';
@@ -13,6 +14,7 @@ const llm = loadLLMConfig();
 const HISTORY_LIMIT = 12;
 
 async function startServer() {
+  await initServerMonitoring();
   const app = express();
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
@@ -85,6 +87,7 @@ async function startServer() {
     } catch (err: any) {
       if (abort.signal.aborted) return;
       const message = err instanceof LLMError ? err.message : 'Unexpected error talking to the AI.';
+      captureServerError(err);
       console.error('[dante]', err);
       if (!started) {
         // Headers not sent yet → normal JSON error with a real status code
@@ -123,6 +126,8 @@ async function startServer() {
     });
   }
 
+  app.use(captureExpressError);
+
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`ZEN_OS running → open http://localhost:${PORT} in your browser`);
     console.log(`  AI provider: ${llm.provider}${llm.model ? ` (${llm.model})` : ''}${describeConfigProblem(llm) ? ` — ${describeConfigProblem(llm)}` : ''}`);
@@ -131,4 +136,8 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(error => {
+  captureServerError(error);
+  console.error(error);
+  process.exitCode = 1;
+});
