@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ZenosProvider, useZenos } from './context/ZenosContext';
 import AppShell, { PageLoader } from './components/layout/AppShell';
 import Legal from './pages/Legal';
 import DanteOrb from './components/DanteOrb';
 import { today } from './lib/utils';
 
+const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 
 // Each page is its own chunk and only loads when opened
@@ -18,7 +19,8 @@ const Analytics = lazy(() => import('./pages/Analytics'));
 const Vault = lazy(() => import('./pages/Vault'));
 const DanteAI = lazy(() => import('./components/views/DanteAI'));
 
-function AppRoutes() {
+export function AppRoutes() {
+  const { pathname } = useLocation();
   const { user, isLoadingData, setShowBriefing, passwordRecovery, setPasswordRecovery } = useZenos();
 
   // Morning briefing once per day between 5:00 and 11:00
@@ -32,10 +34,10 @@ function AppRoutes() {
   }, [user, isLoadingData, setShowBriefing]);
 
   // Public pages, visible without signing in
-  const path = typeof window !== 'undefined' ? window.location.pathname : '/';
-  if (path === '/privacy' || path === '/terms') return <Legal page={path === '/privacy' ? 'privacy' : 'terms'} />;
+  if (pathname === '/privacy' || pathname === '/terms') return <Legal page={pathname === '/privacy' ? 'privacy' : 'terms'} />;
 
   if (passwordRecovery) return <Suspense fallback={<PageLoader />}><Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} /></Suspense>;
+  if (!user && pathname === '/') return <Suspense fallback={<PageLoader />}><Landing /></Suspense>;
   if (!user) return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
 
   if (isLoadingData) {
