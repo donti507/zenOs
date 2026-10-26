@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-26: Added opt-in client/server Sentry error monitoring via VITE_SENTRY_DSN/SENTRY_DSN, default-off SDK loading, strict content-scrubbing event allowlists, documentation, and privacy/transport regression tests. (Codex)
+
 - 2026-10-26: Lazy-loaded Login and first-use overlays with Suspense, retained overlay close behavior, and split React/Motion/Supabase vendor chunks; main JS reduced from 679.29 kB to 56.83 kB (gzip 203.85 to 17.53 kB), with lifecycle tests. (Codex)
 
 - 2026-10-26: Added a one-time per-account local/demo workspace import dialog, atomic retry-safe Supabase import with category label mapping, safe local-key cleanup, and PostgreSQL/browser lifecycle tests. Apply the updated SQL migration. (Codex)

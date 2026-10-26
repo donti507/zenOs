@@ -8,6 +8,7 @@
  * STT_API_KEY   defaults to LLM_API_KEY
  */
 import type { Request, Response } from 'express';
+import { captureServerError } from './monitoring';
 
 export const stt = {
   model: process.env.STT_MODEL || '',
@@ -39,6 +40,7 @@ export async function transcribe(req: Request, res: Response) {
     });
     const body = await r.text();
     if (!r.ok) {
+      captureServerError(new Error('Transcription upstream request failed'));
       let detail = body.slice(0, 200);
       try { detail = JSON.parse(body)?.error?.message || detail; } catch { /* not JSON */ }
       return res.status(502).json({ error: `Transcription failed (${r.status}). ${detail}` });
@@ -47,6 +49,7 @@ export async function transcribe(req: Request, res: Response) {
     try { text = JSON.parse(body).text ?? ''; } catch { /* plain-text response */ }
     res.json({ text: String(text).trim() });
   } catch (err: any) {
+    captureServerError(err);
     res.status(502).json({ error: err?.name === 'TimeoutError' ? 'Transcription took too long.' : `Could not reach the transcription server (${err?.message}).` });
   }
 }
