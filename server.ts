@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createDailyUsage } from './server/dailyUsage';
 import { initServerMonitoring, captureServerError, captureExpressError } from './server/monitoring';
 import path from 'path';
 import fs from 'fs';
@@ -16,6 +17,7 @@ const HISTORY_LIMIT = 12;
 async function startServer() {
   await initServerMonitoring();
   const app = express();
+  const daily = createDailyUsage({ key: process.env.SUPABASE_SERVICE_ROLE_KEY, url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, limit: process.env.DANTE_DAILY_LIMIT });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(express.json({ limit: '512kb' }));
@@ -35,10 +37,12 @@ async function startServer() {
     });
   });
 
-  // Voice input: browser records audio, server sends it to a Whisper-style model
-  app.post('/api/transcribe', requireUser, rateLimit, express.raw({ type: 'audio/*', limit: '15mb' }), transcribe);
+  app.get('/api/dante/usage', requireUser, daily.read);
 
-  app.post('/api/dante', requireUser, rateLimit, async (req, res) => {
+  // Voice input: browser records audio, server sends it to a Whisper-style model
+  app.post('/api/transcribe', requireUser, rateLimit, daily.count('transcriptions'), express.raw({ type: 'audio/*', limit: '15mb' }), transcribe);
+
+  app.post('/api/dante', requireUser, rateLimit, daily.count('messages'), async (req, res) => {
     const problem = describeConfigProblem(llm);
     if (problem) return res.status(503).json({ error: problem });
 

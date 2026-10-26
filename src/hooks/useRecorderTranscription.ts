@@ -1,3 +1,4 @@
+import { notifyDanteUsage } from '../lib/usageEvents';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
@@ -112,6 +113,7 @@ export function useRecorderTranscription({
       } catch (err: any) {
         setError(err?.message || 'Transcription failed.');
       } finally {
+        notifyDanteUsage();
         setInterim('');
       }
     };
