@@ -1,3 +1,4 @@
+import TaskNotificationPrompt from '../TaskNotificationPrompt';
 import LocalImportDialog from '../LocalImportDialog';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -104,6 +105,7 @@ export default function AppShell() {
         id="main"
         className={`pt-16 ${collapsed ? 'md:pl-[72px]' : 'md:pl-60'} transition-[padding] duration-200 ${isDante ? 'h-dvh overflow-hidden' : 'pb-20 md:pb-8'}`}
       >
+        {!isDante && <TaskNotificationPrompt />}
         <motion.div
           key={pathname}
           initial={reduce ? false : { opacity: 0, y: 8 }}

@@ -108,6 +108,7 @@ DECLARE
   item jsonb;
   category_id uuid;
   category_map jsonb := '{}'::jsonb;
+  task_map jsonb := '{}'::jsonb;
   category_label text;
 BEGIN
   IF uid IS NULL THEN
@@ -131,10 +132,14 @@ BEGIN
     category_map := category_map || pg_catalog.jsonb_build_object(item->>'id', category_id::text);
   END LOOP;
   FOR item IN SELECT value FROM pg_catalog.jsonb_array_elements(payload->'tasks') LOOP
-    INSERT INTO public.tasks(user_id, title, cat, status, date, reminder, note, progress, steps, completed_at)
-    VALUES (uid, item->>'title', COALESCE(category_map->>(item->>'cat'), item->>'cat', 'other'),
+    IF item->>'id' IS NOT NULL THEN task_map := task_map || pg_catalog.jsonb_build_object(item->>'id', gen_random_uuid()::text); END IF;
+  END LOOP;
+  FOR item IN SELECT value FROM pg_catalog.jsonb_array_elements(payload->'tasks') LOOP
+    INSERT INTO public.tasks(id, user_id, title, cat, status, date, reminder, note, progress, steps, completed_at, recurrence, recurrence_day, recurrence_source_id)
+    VALUES (COALESCE((task_map->>(item->>'id'))::uuid, gen_random_uuid()), uid, item->>'title', COALESCE(category_map->>(item->>'cat'), item->>'cat', 'other'),
       COALESCE(item->>'status', 'todo'), item->>'date', item->>'reminder', item->>'note',
-      COALESCE((item->>'progress')::integer, 0), COALESCE(item->'steps', '[]'::jsonb), (item->>'completedAt')::timestamptz);
+      COALESCE((item->>'progress')::integer, 0), COALESCE(item->'steps', '[]'::jsonb), (item->>'completedAt')::timestamptz,
+      COALESCE(item->>'recurrence', 'none'), (item->>'recurrenceDay')::smallint, (task_map->>(item->>'recurrenceSourceId'))::uuid);
   END LOOP;
   FOR item IN SELECT value FROM pg_catalog.jsonb_array_elements(payload->'meetings') LOOP
     INSERT INTO public.meetings(user_id, person_name, date, time, subject, status, elapsed_seconds, notes, google_event_id, created_at)
@@ -202,3 +207,48 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.consume_dante_usage(uuid, text, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.consume_dante_usage(uuid, text, integer) TO service_role;
+
+-- 9. Recurring tasks. Metadata preserves monthly anchors and deduplicates successors.
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence text NOT NULL DEFAULT 'none'
+  CHECK (recurrence IN ('none', 'daily', 'weekdays', 'weekly', 'monthly'));
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_day smallint CHECK (recurrence_day BETWEEN 1 AND 31);
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS recurrence_source_id uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_recurrence_source_idx ON public.tasks(user_id, recurrence_source_id);
+
+CREATE OR REPLACE FUNCTION public.create_next_task_occurrence()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE
+  due date;
+  next_due date;
+  anchor_day integer;
+  next_reminder text := '';
+BEGIN
+  IF NEW.status IS DISTINCT FROM 'done' OR OLD.status IS NOT DISTINCT FROM 'done' OR NEW.recurrence = 'none' THEN RETURN NEW; END IF;
+  BEGIN due := NULLIF(NEW.date, '')::date;
+  EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN due := NULL; END;
+  due := COALESCE(due, (NEW.completed_at AT TIME ZONE 'UTC')::date, (now() AT TIME ZONE 'UTC')::date);
+  anchor_day := COALESCE(NEW.recurrence_day, extract(day FROM due)::integer);
+  IF NEW.recurrence = 'monthly' THEN
+    next_due := (date_trunc('month', due) + interval '1 month')::date;
+    next_due := next_due + least(anchor_day, extract(day FROM (next_due + interval '1 month - 1 day'))::integer) - 1;
+  ELSE
+    next_due := due + CASE WHEN NEW.recurrence = 'weekly' THEN 7 ELSE 1 END;
+    WHILE NEW.recurrence = 'weekdays' AND extract(isodow FROM next_due) > 5 LOOP next_due := next_due + 1; END LOOP;
+  END IF;
+  IF NEW.reminder ~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$' THEN
+    BEGIN next_reminder := to_char(NEW.reminder::timestamp + (next_due - due) * interval '1 day', 'YYYY-MM-DD"T"HH24:MI');
+    EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN next_reminder := ''; END;
+  END IF;
+  INSERT INTO public.tasks(user_id, title, cat, status, date, reminder, note, progress, steps, completed_at, recurrence, recurrence_day, recurrence_source_id)
+  VALUES (NEW.user_id, NEW.title, NEW.cat, 'todo', next_due::text, next_reminder, NEW.note, 0,
+    COALESCE((SELECT jsonb_agg(jsonb_build_object('label', step->>'label', 'done', false))
+      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(NEW.steps) = 'array' THEN NEW.steps ELSE '[]'::jsonb END) step
+      WHERE jsonb_typeof(step) = 'object' AND step ? 'label'), '[]'::jsonb),
+    NULL, NEW.recurrence, anchor_day, NEW.id)
+  ON CONFLICT (user_id, recurrence_source_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS tasks_create_next_occurrence ON public.tasks;
+CREATE TRIGGER tasks_create_next_occurrence AFTER UPDATE OF status ON public.tasks
+  FOR EACH ROW EXECUTE FUNCTION public.create_next_task_occurrence();

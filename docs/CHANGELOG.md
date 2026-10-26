@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-26: Added recurring tasks (daily/weekdays/weekly/monthly), atomic completion successors and monthly anchors, one-time browser reminder permission and foreground scheduling, Dante repeat actions, import preservation, and regression coverage. Apply the updated SQL migration. (Codex)
+
 - 2026-10-26: Added atomic per-user daily Dante chat/transcription quotas, service-role-only counting with RLS, authenticated usage display and refresh, optional server configuration, and SQL/API/UI regression coverage. Apply the updated SQL migration before enabling quotas. (Codex)
 
 - 2026-10-26: Added a lazy public landing page with DanteOrb, six features, three steps, pricing, FAQ and legal links; Get started opens existing Login while signed-in/demo Home and password recovery remain intact; added routing tests and reduced-motion styling. (Codex)

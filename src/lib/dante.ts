@@ -64,7 +64,7 @@ export function buildDanteContext(state: ZenosState, googleEvents: any[], userNa
     },
     // Open tasks first so they survive the server-side cap
     tasks: [...tasks.filter(t => t.status !== 'done'), ...done.slice(-30)].map(t => ({
-      id: t.id, title: t.title, status: t.status, date: t.date, cat: t.cat, progress: t.progress, note: t.note,
+      id: t.id, title: t.title, status: t.status, date: t.date, cat: t.cat, progress: t.progress, note: t.note, repeat: t.recurrence || 'none', reminder: t.reminder,
     })),
     meetings: (state.meetings || []).filter(m => m.status !== 'completed' || m.date >= todayStr).map(m => ({
       id: m.id, personName: m.personName, date: m.date, time: m.time, subject: m.subject, status: m.status,

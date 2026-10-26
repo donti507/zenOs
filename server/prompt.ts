@@ -26,7 +26,7 @@ export function buildSystemPrompt(ctx: DanteContext = {}): string {
 
   // Compact one-line-per-item formats use far fewer tokens than raw JSON dumps
   const tasks = arr(ctx.tasks, MAX_TASKS)
-    .map(t => `- [${clip(t.id, 64)}] "${clip(t.title, 140)}" | ${clip(t.status, 12)} | due ${clip(t.date, 10) || 'none'} | ${catLabel(clip(t.cat, 64) as string)}${t.progress ? ` | ${Number(t.progress) || 0}%` : ''}${t.note ? ` | note: ${clip(t.note, 120)}` : ''}`)
+    .map(t => `- [${clip(t.id, 64)}] "${clip(t.title, 140)}" | ${clip(t.status, 12)} | due ${clip(t.date, 10) || 'none'} | repeat ${clip(t.repeat, 12) || 'none'} | ${catLabel(clip(t.cat, 64) as string)}${t.progress ? ` | ${Number(t.progress) || 0}%` : ''}${t.note ? ` | note: ${clip(t.note, 120)}` : ''}`)
     .join('\n') || '(no tasks)';
 
   const meetings = arr(ctx.meetings, MAX_ITEMS)
@@ -70,13 +70,14 @@ When the user clearly asks you to change something, first write a one-sentence c
 {"actions": [ { "action": "...", "data": { ... } } ]}
 \`\`\`
 Available actions (use task/meeting ids from the data above whenever possible):
-- create_task: { "title": string, "cat": category id, "date": "YYYY-MM-DD", "note": string }
+- create_task: { "title": string, "cat": category id, "date": "YYYY-MM-DD", "note": string, "repeat"?: "none"|"daily"|"weekdays"|"weekly"|"monthly" }
 - complete_task: { "id": task id } — marks a task done
 - reopen_task: { "id": task id }
-- update_task: { "id": task id, "title"?: string, "date"?: "YYYY-MM-DD", "status"?: "todo"|"inprogress"|"done", "note"?: string, "cat"?: category id }
+- update_task: { "id": task id, "title"?: string, "date"?: "YYYY-MM-DD", "status"?: "todo"|"inprogress"|"done", "note"?: string, "cat"?: category id, "repeat"?: "none"|"daily"|"weekdays"|"weekly"|"monthly" }
 - create_meeting: { "personName": string, "date": "YYYY-MM-DD", "time": "HH:MM", "subject": string }
 - switch_view: { "view": "dashboard"|"kanban"|"calendar"|"meetings"|"analytics"|"vault"|"dante" }
 - filter_category: { "cat": category id or null }
+Repeat uses local calendar dates: weekdays means Monday–Friday; monthly keeps the original day and clamps short months. Set repeat to none to stop repeating that occurrence. Completing an open recurring task creates its next scheduled occurrence automatically; never add a separate create_task action for that successor.
 You may include several actions in the list. Do NOT output a json block when you are only answering a question. Never delete anything.${ctx.mode === 'voice' ? `
 
 ## VOICE MODE (your reply is spoken aloud)
