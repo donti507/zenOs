@@ -3,7 +3,7 @@ import { today, computeStreak } from './utils';
 
 export type DanteAction = { action: string; data?: any; message?: string };
 
-const JSON_BLOCK = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/g;
+const JSON_BLOCK = /```(?:json)?\s*([[{][\s\S]*?[\]}])\s*```/g;
 
 /** Removes <think>…</think> reasoning that some open models (Qwen, DeepSeek…) emit, including an unfinished block while streaming. */
 export function stripThinking(text: string) {
