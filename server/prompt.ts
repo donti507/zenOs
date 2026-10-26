@@ -74,6 +74,7 @@ Available actions (use task/meeting ids from the data above whenever possible):
 - complete_task: { "id": task id } — marks a task done
 - reopen_task: { "id": task id }
 - update_task: { "id": task id, "title"?: string, "date"?: "YYYY-MM-DD", "status"?: "todo"|"inprogress"|"done", "note"?: string, "cat"?: category id, "repeat"?: "none"|"daily"|"weekdays"|"weekly"|"monthly" }
+- add_task_steps: { "id": task id, "steps": [string] } — append 1–10 short checklist labels (max 200 characters each), preserving existing steps; use exactly 3 tiny steps for a five-minute breakdown request
 - create_meeting: { "personName": string, "date": "YYYY-MM-DD", "time": "HH:MM", "subject": string }
 - switch_view: { "view": "dashboard"|"kanban"|"calendar"|"meetings"|"analytics"|"vault"|"dante" }
 - filter_category: { "cat": category id or null }

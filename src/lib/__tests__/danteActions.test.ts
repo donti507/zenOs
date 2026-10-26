@@ -107,3 +107,17 @@ describe('Dante repeat actions', () => {
     expect(results.every(r=>!r.ok)).toBe(true);expect(deps.addTask).not.toHaveBeenCalled();expect(deps.editTask).not.toHaveBeenCalled();
   });
 });
+
+describe('task breakdown steps',()=>{
+ it('appends steps without replacing existing checklist state or moving the date',async()=>{
+  const deps=setup([task({steps:[{label:'Existing',done:true}]})]);
+  const [result]=await runDanteActions([{action:'add_task_steps',data:{id:'t1',steps:['Open the document','Write one sentence','Read it once']}}],deps);
+  expect(result.ok).toBe(true);
+  expect(deps.editTask).toHaveBeenCalledWith('t1',{steps:[{label:'Existing',done:true},{label:'Open the document',done:false},{label:'Write one sentence',done:false},{label:'Read it once',done:false}],progress:25});
+ });
+ it('validates labels and avoids duplicate steps on a replay',async()=>{
+  const deps=setup([task({steps:[{label:'Open it',done:false}]})]);
+  const results=await runDanteActions([{action:'add_task_steps',data:{id:'t1',steps:['  OPEN IT  ']}},{action:'add_task_steps',data:{id:'t1',steps:[{label:'bad'}]}}],deps);
+  expect(results.map(r=>r.ok)).toEqual([true,false]);expect(deps.editTask).not.toHaveBeenCalled();
+ });
+});

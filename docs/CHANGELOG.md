@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added atomic/local postpone counting, gentle Home cards after three later-date moves, append-only three-step Dante breakdowns, and a five-minute focus timer that survives workspace navigation; added SQL/date/action/UI tests. Apply the updated SQL migration. (Codex)
+
 - 2026-10-26: Added recurring tasks (daily/weekdays/weekly/monthly), atomic completion successors and monthly anchors, one-time browser reminder permission and foreground scheduling, Dante repeat actions, import preservation, and regression coverage. Apply the updated SQL migration. (Codex)
 
 - 2026-10-26: Added atomic per-user daily Dante chat/transcription quotas, service-role-only counting with RLS, authenticated usage display and refresh, optional server configuration, and SQL/API/UI regression coverage. Apply the updated SQL migration before enabling quotas. (Codex)

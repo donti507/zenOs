@@ -1,3 +1,4 @@
+import FocusTimer from '../FocusTimer';
 import TaskNotificationPrompt from '../TaskNotificationPrompt';
 import LocalImportDialog from '../LocalImportDialog';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
@@ -145,6 +146,7 @@ export default function AppShell() {
         ))}
       </nav>
 
+      <FocusTimer />
       <LocalImportDialog />
       <OnFirstOpen open={!!showModal}><Modals /></OnFirstOpen>
       {!localImportOpen && <OnFirstOpen open={showBriefing}><MorningBriefing /></OnFirstOpen>}

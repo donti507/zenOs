@@ -1,3 +1,4 @@
+import PostponedTasks from '../components/PostponedTasks';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -179,6 +180,8 @@ export default function Home() {
           </AnimatePresence>
         </div>
       </motion.section>
+
+      <PostponedTasks />
 
       {/* Dante command center */}
       <motion.section {...enter(1)} className={`relative overflow-hidden ${card} p-6`}>

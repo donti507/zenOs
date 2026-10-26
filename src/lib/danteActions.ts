@@ -84,6 +84,23 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
         await editTask(t.id, updates);
         return { label: `Update “${t.title}”`, ok: true };
       }
+      case "add_task_steps": {
+        const t = findTask(d);
+        if (!t) return { label: 'Break down task', ok: false, detail: 'No single task matches' };
+        if (!Array.isArray(d.steps) || d.steps.length < 1 || d.steps.length > 10 || d.steps.some((label: unknown) => typeof label !== 'string' || !label.trim() || label.trim().length > 200)) {
+          return { label: 'Break down task', ok: false, detail: 'Give 1–10 short, non-empty checklist steps' };
+        }
+        const existing = t.steps || [];
+        const seen = new Set(existing.map(step => step.label.trim().toLowerCase()));
+        const added = d.steps.map((label: string) => label.trim()).filter((label: string) => {
+          const key = label.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true;
+        }).map((label: string) => ({ label, done: false }));
+        if (added.length) {
+          const steps = [...existing, ...added];
+          await editTask(t.id, { steps, progress: Math.round(steps.filter(step => step.done).length / steps.length * 100) });
+        }
+        return { label: `Add ${added.length} steps to “${t.title}”`, ok: true };
+      }
       case "create_meeting": {
         const m = await addMeeting({
           personName: String(d.personName || "Team"),
