@@ -131,7 +131,7 @@ interface ZenosContextType {
   loadingEvents: boolean;
   isLoadingData: boolean;
   syncError: string | null;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: (withCalendar?: boolean) => Promise<void>;
   logOut: () => Promise<void>;
   fetchGoogleEvents: () => Promise<void>;
   loginOffline: (email?: string, name?: string) => void;
@@ -351,14 +351,22 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     if (accessToken) fetchGoogleEvents();
   }, [accessToken, state.calYear, state.calMonth]);
 
-  const loginWithGoogle = async () => {
+  /**
+   * Sign in with Google. Plain sign-in only asks for name + email (no Google review needed).
+   * Pass withCalendar=true from "Connect Google Calendar" to request Calendar access separately.
+   */
+  const loginWithGoogle = async (withCalendar = false) => {
     if (!SUPABASE_CONFIGURED) throw new Error('Google sign-in needs Supabase to be configured.');
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/`,
-        scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
-        queryParams: { access_type: 'offline', prompt: 'consent' },
+        redirectTo: `${window.location.origin}${withCalendar ? '/calendar' : '/'}`,
+        ...(withCalendar
+          ? {
+              scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+              queryParams: { access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true' },
+            }
+          : {}),
       },
     });
     if (error) throw error;

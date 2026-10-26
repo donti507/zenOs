@@ -106,7 +106,7 @@ export default function Calendar() {
             <div className="font-medium text-on-surface">Connect Google Calendar</div>
             <div className="text-[12px] text-on-surface-variant">See your events here and let Dante plan around them.</div>
           </div>
-          <button className={btn.secondary} onClick={() => loginWithGoogle().catch(e => alert(e.message))}>Connect</button>
+          <button className={btn.secondary} onClick={() => loginWithGoogle(true).catch(e => alert(e.message))}>Connect</button>
         </div>
       )}
 
