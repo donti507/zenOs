@@ -1,15 +1,18 @@
 import LocalImportDialog from '../LocalImportDialog';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'motion/react';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import Modals from '../Modals';
-import MorningBriefing from '../MorningBriefing';
-import DanteLive from '../DanteLive';
+import OnFirstOpen from '../OnFirstOpen';
+
 import DanteOrb from '../DanteOrb';
 import { useZenos } from '../../context/ZenosContext';
 import { pathForView, routeForPath } from '../../lib/routes';
+
+const Modals = lazy(() => import('../Modals'));
+const MorningBriefing = lazy(() => import('../MorningBriefing'));
+const DanteLive = lazy(() => import('../DanteLive'));
 
 const MOBILE_TABS = [
   { to: '/', icon: 'home', label: 'Home' },
@@ -67,7 +70,7 @@ export function PageLoader() {
 
 export default function AppShell() {
   const { pathname } = useLocation();
-  const { setLiveOpen, localImportOpen } = useZenos();
+  const { setLiveOpen, localImportOpen, showModal, showBriefing, liveOpen } = useZenos();
 
   // Ctrl+Shift+Space opens Dante Live from anywhere
   useEffect(() => {
@@ -141,9 +144,9 @@ export default function AppShell() {
       </nav>
 
       <LocalImportDialog />
-      <Modals />
-      {!localImportOpen && <MorningBriefing />}
-      <DanteLive />
+      <OnFirstOpen open={!!showModal}><Modals /></OnFirstOpen>
+      {!localImportOpen && <OnFirstOpen open={showBriefing}><MorningBriefing /></OnFirstOpen>}
+      <OnFirstOpen open={liveOpen}><DanteLive /></OnFirstOpen>
     </div>
   );
 }
