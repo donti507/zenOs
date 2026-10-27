@@ -6,6 +6,9 @@ import { ZenosProvider, useZenos } from '../ZenosContext';
 vi.mock('../../lib/supabase', () => ({
   SUPABASE_CONFIGURED: true,
   supabase: {
+    realtime: { setAuth: async () => {} },
+    channel: () => { const channel = { on: () => channel, subscribe: () => channel }; return channel; },
+    removeChannel: async () => 'ok',
     auth: {
       getSession: async () => ({ data: { session: { user: { id: 'real-a' }, access_token: 'verified-token' } } }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),

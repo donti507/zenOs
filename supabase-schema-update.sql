@@ -405,3 +405,57 @@ ALTER TABLE public.google_tokens ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.google_tokens FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.google_tokens TO service_role;
 -- No browser-facing policies: requireUser endpoints access storage via service_role.
+
+-- Per-user private Realtime Broadcast includes DELETE ownership; unlike Postgres
+-- Changes DELETE subscriptions, it never broadcasts another user's rows to clients.
+CREATE OR REPLACE FUNCTION public.broadcast_workspace_change()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+    IF OLD.user_id IS NOT NULL THEN
+      PERFORM realtime.broadcast_changes('zenos:workspace:' || OLD.user_id::text, 'DELETE', 'DELETE', TG_TABLE_NAME, TG_TABLE_SCHEMA, NULL, OLD);
+    END IF;
+    IF NEW.user_id IS NOT NULL THEN
+      PERFORM realtime.broadcast_changes('zenos:workspace:' || NEW.user_id::text, 'INSERT', 'INSERT', TG_TABLE_NAME, TG_TABLE_SCHEMA, NEW, NULL);
+    END IF;
+  ELSIF TG_OP = 'DELETE' THEN
+    IF OLD.user_id IS NOT NULL THEN
+      PERFORM realtime.broadcast_changes('zenos:workspace:' || OLD.user_id::text, TG_OP, TG_OP, TG_TABLE_NAME, TG_TABLE_SCHEMA, NEW, OLD);
+    END IF;
+  ELSIF NEW.user_id IS NOT NULL THEN
+    PERFORM realtime.broadcast_changes('zenos:workspace:' || NEW.user_id::text, TG_OP, TG_OP, TG_TABLE_NAME, TG_TABLE_SCHEMA, NEW, OLD);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.broadcast_workspace_change() FROM PUBLIC, anon, authenticated;
+
+DO $$
+DECLARE table_name text;
+BEGIN
+  -- Non-Supabase PostgreSQL test/development databases need no Realtime service.
+  IF to_regclass('realtime.messages') IS NULL THEN RETURN; END IF;
+  IF to_regprocedure('realtime.broadcast_changes(text,text,text,text,text,record,record,text)') IS NULL THEN
+    RAISE EXCEPTION 'Supabase Realtime Broadcast database support must be enabled first';
+  END IF;
+  ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+  DROP POLICY IF EXISTS zenos_workspace_receive ON realtime.messages;
+  CREATE POLICY zenos_workspace_receive ON realtime.messages FOR SELECT TO authenticated
+    USING (extension = 'broadcast' AND topic = 'zenos:workspace:' || (SELECT auth.uid())::text AND (SELECT realtime.topic()) = topic);
+  -- Scoped restrictive policies preserve unrelated channels while preventing broad
+  -- pre-existing allow policies from exposing or forging workspace broadcasts.
+  DROP POLICY IF EXISTS zenos_workspace_isolation ON realtime.messages;
+  CREATE POLICY zenos_workspace_isolation ON realtime.messages AS RESTRICTIVE FOR SELECT TO anon, authenticated
+    USING (topic NOT LIKE 'zenos:workspace:%' OR (topic = 'zenos:workspace:' || (SELECT auth.uid())::text AND (SELECT realtime.topic()) = topic));
+  DROP POLICY IF EXISTS zenos_workspace_server_only ON realtime.messages;
+  CREATE POLICY zenos_workspace_server_only ON realtime.messages AS RESTRICTIVE FOR INSERT TO anon, authenticated
+    WITH CHECK (topic NOT LIKE 'zenos:workspace:%');
+  DROP POLICY IF EXISTS zenos_workspace_no_client_update ON realtime.messages;
+  CREATE POLICY zenos_workspace_no_client_update ON realtime.messages AS RESTRICTIVE FOR UPDATE TO anon, authenticated
+    USING (topic NOT LIKE 'zenos:workspace:%') WITH CHECK (topic NOT LIKE 'zenos:workspace:%');
+  FOREACH table_name IN ARRAY ARRAY['tasks', 'categories', 'meetings', 'vault_items'] LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS zenos_workspace_broadcast ON public.%I', table_name);
+    EXECUTE format('CREATE TRIGGER zenos_workspace_broadcast AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.broadcast_workspace_change()', table_name);
+  END LOOP;
+END;
+$$;

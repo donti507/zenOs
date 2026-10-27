@@ -38,6 +38,8 @@ Check the connection at `GET /api/dante/status`; the Dante screen also shows the
 3. Put the project URL and anon key in `.env` as both `VITE_SUPABASE_*` (used in dev) and `SUPABASE_*` (used by the server to verify logins and injected into the page in production).
 4. For Google sign-in + Calendar: enable the Google provider in Supabase Auth and add the Calendar scopes in Google Cloud. For persistent access, configure server-only `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY`, apply the migration, and reconnect Calendar once. See [Google Calendar setup](docs/GOOGLE_CALENDAR.md).
 
+For live workspace updates across devices, apply the latest migration and enable Supabase Realtime. See [Realtime setup](docs/REALTIME.md). Local mode remains browser-only.
+
 ## Dante
 
 - Streams answers, with a **Stop** button (or Esc).
