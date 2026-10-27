@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added My Space editing through Dante Live with quota-metered save points, short spoken confirmations after saving, automatic preview/timeline/Learn refresh, scoped cancellation of late transcripts, mobile entry button and regression tests; no new migration. (Codex)
+
 - 2026-10-27: Added My Space Learn mode with plain-language AI explanations saved per version, exact-predecessor highlighted code comparisons, timeline review, cloud/local persistence and regression tests; apply the updated migration. (Codex)
 
 - 2026-10-27: Added My Space page-menu pin/unpin and Home sandboxed widgets with small/medium sizes, accessible ordering, private per-user cloud/local persistence and regression tests; apply the updated migration. (Codex)

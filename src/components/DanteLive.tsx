@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { editSpaceByVoice, spaceVoiceSlug, spaceVoiceConfirmation } from '../lib/spaceVoice';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useZenos } from '../context/ZenosContext';
 import DanteOrb, { OrbState } from './DanteOrb';
@@ -67,7 +69,16 @@ export default function DanteLive() {
   const {
     liveOpen, setLiveOpen, stateRef, user, isOffline, googleEvents, getAuthToken, saveDanteMessage,
     addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
+    spacePages, loadSpacePage, editSpacePage,
   } = useZenos();
+  const location = useLocation();
+  const pageSlug = spaceVoiceSlug(location.pathname);
+  const activePage = (spacePages || []).find(page => page.slug === pageSlug);
+  const voiceScope = useMemo(() => ({pathname: location.pathname, owner: user?.id, isOffline, pageId: activePage?.id}), [location.pathname, location.key, user?.id, isOffline, activePage?.id]);
+  const scopeRef = useRef(voiceScope); scopeRef.current = voiceScope;
+  const captureRef = useRef<typeof voiceScope | null>(null);
+  const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pageTitle = activePage?.title || pageSlug;
   const reduce = useReducedMotion();
   const status = useDanteStatus();
 
@@ -105,10 +116,15 @@ export default function DanteLive() {
     langVoices[0] || null;
 
   // ---------- microphone ----------
-  const onUtterance = (text: string) => { if (openRef.current) ask(text); };
+  const onUtterance = (text: string) => {
+    const captured = captureRef.current;
+    captureRef.current = null; // A final transcript is consumed once, including while an edit is saving.
+    if (openRef.current && captured && captured === scopeRef.current) void ask(text, captured);
+  };
   const server = useRecorderTranscription({ lang, onFinal: onUtterance, getToken: getAuthToken });
   const browser = useSpeechRecognition({ lang, onFinal: onUtterance });
   const mic = status?.stt && server.supported ? server : browser;
+  const micRef = useRef(mic); micRef.current = mic;
   const level = useMicLevel(liveOpen && !paused);
 
   useEffect(() => {
@@ -121,8 +137,13 @@ export default function DanteLive() {
   const listen = useCallback(() => {
     if (!openRef.current || pausedRef.current) return;
     setError(null);
-    mic.start();
-  }, [mic]);
+    captureRef.current = scopeRef.current;
+    micRef.current.start();
+  }, []);
+  const scheduleListen = (delay: number) => {
+    if (listenTimer.current) clearTimeout(listenTimer.current);
+    listenTimer.current = setTimeout(listen, delay);
+  };
 
   // ---------- speaking: sentences are spoken while the answer is still streaming ----------
   const stopSpeaking = () => { ttsRun.current++; if ('speechSynthesis' in window) speechSynthesis.cancel(); };
@@ -151,7 +172,7 @@ export default function DanteLive() {
   };
 
   // ---------- one turn of conversation ----------
-  const ask = async (text: string) => {
+  const ask = async (text: string, captured: typeof voiceScope) => {
     const q = text.trim();
     if (!q) return listen();
     stopSpeaking();
@@ -161,6 +182,37 @@ export default function DanteLive() {
     setResults([]);
     setError(null);
     setPhase('thinking');
+
+    const slug = spaceVoiceSlug(captured.pathname);
+    if (slug) {
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const speaker = makeSpeaker();
+      const isCurrent = () => openRef.current && scopeRef.current === captured && !controller.signal.aborted;
+      try {
+        const outcome = await runDanteActions([{action: 'edit_space_page', data: {instruction: q}}], {
+          stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState,
+          editSpacePageFromVoice: async instruction => {
+            await editSpaceByVoice({slug, pageId: captured.pageId,
+              instruction, isOffline, signal: controller.signal, isCurrent, loadSpacePage, editSpacePage});
+          },
+        });
+        if (!isCurrent()) return;
+        setResults(outcome);
+        if (!outcome[0]?.ok) {
+          setError(outcome[0]?.detail || 'The page edit was not confirmed. Check its save points before retrying.');
+          setPhase('idle');
+          return;
+        }
+        const confirmation = spaceVoiceConfirmation(lang);
+        setReply(confirmation);
+        speaker.speak(confirmation); // Never announce success before the version has been stored.
+        speaker.finish();
+        await speaker.done;
+        if (isCurrent() && speaker.isCurrent()) { setPhase('idle'); scheduleListen(250); }
+      } finally { speaker.finish(); }
+      return; // Page code, prompts and replies stay in page history, not the general Dante conversation.
+    }
 
     const history = [...stateRef.current.danteHistory, { role: 'user' as const, content: q, ts: Date.now() }]
       .slice(-10)
@@ -186,13 +238,14 @@ export default function DanteLive() {
 
     try {
       const token = await getAuthToken();
+      if (controller.signal.aborted || scopeRef.current !== captured) return;
       const name = user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
       full = await streamDante({
         messages: history,
         context: buildDanteContext(stateRef.current, googleEvents, name, lang, 'voice', isOffline),
         token,
         signal: controller.signal,
-        onText: t => { full = t; setReply(visibleText(t)); speakReady(false); },
+        onText: t => { if (!controller.signal.aborted && scopeRef.current === captured) { full = t; setReply(visibleText(t)); speakReady(false); } },
       });
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
@@ -213,7 +266,7 @@ export default function DanteLive() {
     await speaker.done;
     if (speaker.isCurrent() && openRef.current) {
       setPhase('idle');
-      setTimeout(listen, 250); // keep the conversation going
+      scheduleListen(250); // keep the conversation going
     }
   };
 
@@ -229,16 +282,23 @@ export default function DanteLive() {
 
   // ---------- open / close ----------
   useEffect(() => {
-    if (liveOpen) {
-      setHeard(''); setReply(''); setResults([]); setError(null); setPaused(false);
-      const t = setTimeout(listen, 350);
-      return () => clearTimeout(t);
-    }
+    captureRef.current = null;
     stopSpeaking();
     abortRef.current?.abort();
-    mic.cancel();
+    server.cancel(); browser.cancel();
     setPhase('idle');
-  }, [liveOpen]);
+    if (liveOpen) {
+      setHeard(''); setReply(''); setResults([]); setError(null); setPaused(false);
+      scheduleListen(350);
+    }
+    return () => {
+      if (listenTimer.current) clearTimeout(listenTimer.current);
+      captureRef.current = null;
+      stopSpeaking();
+      abortRef.current?.abort();
+      server.cancel(); browser.cancel();
+    };
+  }, [liveOpen, voiceScope]);
 
   const close = () => setLiveOpen(false);
 
@@ -246,7 +306,7 @@ export default function DanteLive() {
   const tap = () => {
     if (phase === 'speaking' || phase === 'thinking') { stopSpeaking(); abortRef.current?.abort(); setPhase('idle'); listen(); }
     else if (phase === 'listening') mic.stop();
-    else if (phase === 'idle') { setPaused(false); setTimeout(listen, 0); }
+    else if (phase === 'idle') { setPaused(false); scheduleListen(0); }
   };
 
   useEffect(() => {
@@ -337,6 +397,7 @@ export default function DanteLive() {
             </div>
           )}
 
+          {pageSlug && <p className="relative mx-5 rounded-xl bg-surface-container px-4 py-3 text-sm text-on-surface text-center break-words" role="status">Editing “{pageTitle}” · Voice instructions change this page and save a version.</p>}
           {/* Centre: orb + captions */}
           <div className="relative flex-1 flex flex-col items-center justify-center gap-10 px-6">
             <button onClick={tap} className="rounded-full cursor-pointer focus-visible:outline-white" aria-label={label}>
@@ -367,7 +428,7 @@ export default function DanteLive() {
           {/* Bottom controls */}
           <div className="relative flex items-center justify-center gap-4 pb-10 pt-4">
             <button
-              onClick={() => { const p = !paused; setPaused(p); if (p) { mic.cancel(); setPhase('idle'); } else setTimeout(listen, 0); }}
+              onClick={() => { const p = !paused; setPaused(p); if (p) { captureRef.current = null; mic.cancel(); setPhase('idle'); } else scheduleListen(0); }}
               className={`w-14 h-14 rounded-full flex items-center justify-center cursor-pointer transition-colors ${paused ? 'bg-white text-[#07071a]' : 'bg-white/10 hover:bg-white/20'}`}
               aria-label={paused ? 'Unmute microphone' : 'Mute microphone'}
               aria-pressed={paused}
@@ -378,7 +439,7 @@ export default function DanteLive() {
               <Icon name="call_end" className="text-[24px]" />End
             </button>
           </div>
-          <p className="relative text-center text-[12px] text-white/40 pb-4 hidden md:block">Space: talk / interrupt · Esc: close · Conversation is saved in the Dante chat</p>
+          <p className="relative text-center text-[12px] text-white/40 pb-4 hidden md:block">Space: talk / interrupt · Esc: close · {pageSlug ? 'Edits are saved in this page’s timeline' : 'Conversation is saved in the Dante chat'}</p>
         </motion.div>
       )}
     </AnimatePresence>

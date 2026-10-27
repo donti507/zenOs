@@ -143,3 +143,18 @@ describe('durable memory actions',()=>{
     expect((await runDanteActions([{action:'forget',data:{id:memory.id}}],deps))[0].ok).toBe(false);expect(deps.forgetFact).not.toHaveBeenCalled();
   });
 });
+
+describe('voice page editing',()=>{
+ it('requires an explicit host-scoped handler and ignores model-supplied page/model targets',async()=>{
+  const action={action:'edit_space_page',data:{instruction:' add a timer ',pageId:'foreign',model:'foreign'}};
+  expect((await runDanteActions([action],setup()))[0].ok).toBe(false);
+  const editSpacePageFromVoice=vi.fn().mockResolvedValue(undefined);
+  const deps={...setup(),editSpacePageFromVoice};
+  expect((await runDanteActions([action],deps))[0].ok).toBe(true);
+  expect(editSpacePageFromVoice).toHaveBeenCalledWith('add a timer');
+  for(const instruction of ['', 'x'.repeat(2001),{}]) expect((await runDanteActions([{action:'edit_space_page',data:{instruction}}],deps))[0].ok).toBe(false);
+  expect(editSpacePageFromVoice).toHaveBeenCalledTimes(1);
+  editSpacePageFromVoice.mockRejectedValueOnce(new Error('Save was not confirmed'));
+  expect((await runDanteActions([action],deps))[0]).toMatchObject({ok:false,detail:'Save was not confirmed'});
+ });
+});

@@ -30,6 +30,7 @@ export default function Space() {
   const {
     user,
     isOffline,
+    setLiveOpen,
     spacePages,
     changeSpaceWidget,
     spacePagesLoading,
@@ -159,6 +160,19 @@ export default function Space() {
     window.addEventListener("focus", focus);
     return () => window.removeEventListener("focus", focus);
   }, [slug, loadSpacePage]);
+  const savedVersion = spacePages.find(page => page.slug === slug)?.currentVersionId;
+  useEffect(() => {
+    if (!slug || !snapshot || busy || !savedVersion || savedVersion === snapshot.version.id) return;
+    let active = true;
+    const version = generation.current;
+    void loadSpacePage(slug).then(async data => {
+      if (!active || version !== generation.current) return;
+      setSnapshot(data);
+      setLearnVersion(null);
+      await readHistory(data.page.id);
+    }).catch(() => { if (active && version === generation.current) setError('A new save point is available. Refresh this page to load it.'); });
+    return () => { active = false; };
+  }, [slug, savedVersion, snapshot?.version.id, busy, loadSpacePage]);
   const run = async (work: (signal: AbortSignal) => Promise<void>) => {
     if (running.current) return;
     running.current = true;
@@ -275,6 +289,7 @@ export default function Space() {
         >
           Refresh
         </button>
+        {snapshot && <button type="button" className={btn.secondary} disabled={busy || loading || blocked} onClick={() => setLiveOpen(true)}>Edit by voice</button>}
         {snapshot && <button type="button" role="switch" aria-checked={learnMode} className={learnMode ? btn.solid : btn.secondary} onClick={() => setLearnMode(value => !value)}>Learn mode</button>}
         {snapshot && <details className="relative">
           <summary className={`${btn.secondary} cursor-pointer`}>Page menu</summary>
