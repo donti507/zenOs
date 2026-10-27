@@ -1,3 +1,4 @@
+import { recentMemory } from '../../shared/danteMemory';
 import { notifyDanteUsage } from './usageEvents';
 import { ZenosState, DanteMessage } from '../types';
 import { today, computeStreak } from './utils';
@@ -54,6 +55,7 @@ export function buildDanteContext(state: ZenosState, googleEvents: any[], userNa
   const done = tasks.filter(t => t.status === 'done');
   return {
     mode,
+    memory: recentMemory(state.danteMemory),
     userName,
     language,
     now: {

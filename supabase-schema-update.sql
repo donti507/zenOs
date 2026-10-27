@@ -459,3 +459,59 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+-- Long-term Dante facts: own-account access, atomic per-user quota, account cascade.
+CREATE TABLE IF NOT EXISTS public.dante_memory (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  fact text NOT NULL CHECK (char_length(btrim(fact)) BETWEEN 1 AND 200),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id, fact)
+);
+CREATE INDEX IF NOT EXISTS dante_memory_user_recent_idx ON public.dante_memory(user_id, created_at DESC, id DESC);
+ALTER TABLE public.dante_memory ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.dante_memory FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, DELETE ON public.dante_memory TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.dante_memory TO service_role;
+DROP POLICY IF EXISTS dante_memory_own ON public.dante_memory;
+CREATE POLICY dante_memory_own ON public.dante_memory FOR ALL TO authenticated
+  USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.enforce_dante_memory_limit()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+BEGIN
+  NEW.fact := btrim(NEW.fact);
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(NEW.user_id::text, 507));
+  IF TG_OP = 'INSERT' OR NEW.user_id IS DISTINCT FROM OLD.user_id THEN
+    IF (SELECT count(*) FROM public.dante_memory WHERE user_id = NEW.user_id) >= 100 THEN
+      RAISE EXCEPTION 'Dante memory limit reached (100 facts)';
+    END IF;
+  END IF;
+  IF TG_OP = 'INSERT' THEN NEW.created_at := now(); END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS dante_memory_limit ON public.dante_memory;
+CREATE TRIGGER dante_memory_limit BEFORE INSERT OR UPDATE ON public.dante_memory
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_dante_memory_limit();
+REVOKE ALL ON FUNCTION public.enforce_dante_memory_limit() FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.remember_dante_fact(p_fact text, p_owner uuid DEFAULT auth.uid())
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE saved public.dante_memory%ROWTYPE; owner_id uuid := auth.uid(); normalized text := btrim(p_fact);
+BEGIN
+  IF owner_id IS NULL OR p_owner IS DISTINCT FROM owner_id THEN
+    RAISE EXCEPTION 'Authentication required for this account' USING ERRCODE = '42501';
+  END IF;
+  IF normalized IS NULL OR char_length(normalized) NOT BETWEEN 1 AND 200 THEN
+    RAISE EXCEPTION 'A fact must contain 1-200 characters' USING ERRCODE = '22023';
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(owner_id::text, 507));
+  SELECT * INTO saved FROM public.dante_memory WHERE user_id = owner_id AND fact = normalized;
+  IF FOUND THEN RETURN to_jsonb(saved); END IF;
+  INSERT INTO public.dante_memory(user_id, fact) VALUES(owner_id, normalized) RETURNING * INTO saved;
+  RETURN to_jsonb(saved);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.remember_dante_fact(text,uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.remember_dante_fact(text,uuid) TO authenticated;

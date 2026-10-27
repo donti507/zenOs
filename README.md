@@ -52,6 +52,8 @@ For live workspace updates across devices, apply the latest migration and enable
 
 Voice input uses the browser's Web Speech API: it works in Chrome, Edge and Safari, needs HTTPS (or localhost), and the browser sends audio to its own speech service.
 
+Dante can remember short facts/preferences across conversations. Open **What Dante remembers** to inspect or forget them. Apply the updated SQL migration first; see [Dante memory](docs/DANTE_MEMORY.md).
+
 ## Security
 
 - `/api/dante` requires a valid Supabase login and is rate-limited (`DANTE_RATE_LIMIT`, default 20/min per user).

@@ -66,7 +66,7 @@ const VOICE_LANGS = [
 export default function DanteLive() {
   const {
     liveOpen, setLiveOpen, stateRef, user, googleEvents, getAuthToken, saveDanteMessage,
-    addTask, editTask, toggleTaskDone, addMeeting, updateState,
+    addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
   } = useZenos();
   const reduce = useReducedMotion();
   const status = useDanteStatus();
@@ -207,7 +207,7 @@ export default function DanteLive() {
     speaker.finish();
     saveDanteMessage('assistant', full);
     const actions = parseActions(full);
-    if (actions.length) setResults(await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState }));
+    if (actions.length) setResults(await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact }));
     if (!toSpeech(full)) speaker.finish();
 
     await speaker.done;

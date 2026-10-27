@@ -104,7 +104,7 @@ export default function AppShell() {
 
       <main
         id="main"
-        className={`pt-16 ${collapsed ? 'md:pl-[72px]' : 'md:pl-60'} transition-[padding] duration-200 ${isDante ? 'h-dvh overflow-hidden' : 'pb-20 md:pb-8'}`}
+        className={`pt-16 ${collapsed ? 'md:pl-[72px]' : 'md:pl-60'} transition-[padding] duration-200 ${isDante ? 'h-dvh overflow-hidden pb-20 md:pb-0' : 'pb-20 md:pb-8'}`}
       >
         {!isDante && <TaskNotificationPrompt />}
         <motion.div

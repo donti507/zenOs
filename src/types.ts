@@ -57,6 +57,7 @@ export interface Meeting {
 }
 
 export interface ZenosState {
+  danteMemory?: import('../shared/danteMemory').DanteMemory[];
   view: string;
   calYear: number;
   calMonth: number;

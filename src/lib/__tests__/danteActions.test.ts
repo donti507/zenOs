@@ -121,3 +121,25 @@ describe('task breakdown steps',()=>{
   expect(results.map(r=>r.ok)).toEqual([true,false]);expect(deps.editTask).not.toHaveBeenCalled();
  });
 });
+
+describe('durable memory actions',()=>{
+  const memory={id:'fact-1',fact:'I prefer mornings',createdAt:'2026-10-27T10:00:00Z'};
+  it('validates facts and delegates quota enforcement to the persistence layer',async()=>{
+    const deps={...setup(),rememberFact:vi.fn().mockResolvedValue(memory)};
+    expect((await runDanteActions([{action:'remember',data:{fact:'  I prefer mornings  '}}],deps))[0].ok).toBe(true);
+    expect(deps.rememberFact).toHaveBeenCalledWith('I prefer mornings');
+    for(const fact of ['', 'x'.repeat(201), {}, 123])expect((await runDanteActions([{action:'remember',data:{fact}}],deps))[0].ok).toBe(false);
+    deps.rememberFact.mockRejectedValue(new Error('100 facts maximum'));
+    expect((await runDanteActions([{action:'remember',data:{fact:'one more'}}],deps))[0]).toMatchObject({ok:false,detail:'100 facts maximum'});
+  });
+  it('never forgets unknown IDs or deletes without an explicit confirmation',async()=>{
+    const deps={...setup(),forgetFact:vi.fn().mockResolvedValue(undefined),confirmForgetFact:vi.fn().mockResolvedValue(false)};
+    deps.stateRef.current.danteMemory=[memory];
+    expect((await runDanteActions([{action:'forget',data:{id:'unknown'}}],deps))[0].ok).toBe(false);expect(deps.confirmForgetFact).not.toHaveBeenCalled();
+    expect((await runDanteActions([{action:'forget',data:{id:memory.id}}],deps))[0].detail).toBe('Canceled');expect(deps.forgetFact).not.toHaveBeenCalled();
+    deps.confirmForgetFact.mockResolvedValue(true);
+    expect((await runDanteActions([{action:'forget',data:{id:memory.id}}],deps))[0].ok).toBe(true);expect(deps.forgetFact).toHaveBeenCalledWith(memory.id);
+    deps.confirmForgetFact=undefined as any;deps.forgetFact.mockClear();
+    expect((await runDanteActions([{action:'forget',data:{id:memory.id}}],deps))[0].ok).toBe(false);expect(deps.forgetFact).not.toHaveBeenCalled();
+  });
+});
