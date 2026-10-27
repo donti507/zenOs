@@ -1,3 +1,4 @@
+import { createChallenges } from './server/challenges';
 import 'dotenv/config';
 import express from 'express';
 import { createGallery } from './server/gallery';
@@ -42,6 +43,15 @@ async function startServer() {
   app.use(express.json({ limit: '512kb' }));
 
   const gallery=createGallery();
+  const challenges=createChallenges();
+  app.get('/api/challenges/mine',requireUser,gallery.signed,gallery.noCache,challenges.mine);
+  app.get('/api/challenges/badges',requireUser,gallery.signed,gallery.noCache,challenges.badges);
+  app.post('/api/challenges',requireUser,gallery.signed,rateLimit,gallery.noCache,gallery.admin,challenges.create);
+  app.get('/api/challenges/:id/account',requireUser,gallery.signed,gallery.noCache,challenges.myDetail);
+  app.post('/api/challenges/:id/submit',requireUser,gallery.signed,rateLimit,gallery.noCache,challenges.submit);
+  app.post('/api/challenges/:id/vote',requireUser,gallery.signed,rateLimit,gallery.noCache,challenges.vote);
+  app.get('/api/challenges/:id',gallery.noCache,challenges.detail);
+  app.get('/api/challenges',gallery.noCache,challenges.list);
   app.get('/api/gallery/status',gallery.status);
   app.get('/api/gallery/account',requireUser,gallery.signed,gallery.noCache,gallery.account);
   app.get('/api/gallery/admin',requireUser,gallery.signed,gallery.noCache,gallery.admin,gallery.adminList);

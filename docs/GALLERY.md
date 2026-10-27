@@ -30,3 +30,7 @@ Admins can inspect sandboxed hidden snapshots and choose:
 Titles, descriptions and public author labels have length limits, reject markup/control characters and use a small case/Unicode-normalized profanity filter. It is a basic text check, not comprehensive content moderation. Page code is not inspected by this filter; sandboxing and reporting remain independent controls. Reporter identities are never returned in public API responses. Public and admin reads use `Cache-Control: no-store` so hidden snapshots are not served from an application cache. Previously loaded frames stop when the user navigates/refreshes; hiding a page cannot erase someone’s existing downloaded copy.
 
 Public records and own report records are included in account exports and cascade on account deletion. Independent remix attribution remains with the copied work. Never log code, report details, private identity data or credentials.
+
+## Build challenges
+
+Open **Challenges** in the gallery to submit a published page, vote for another builder, or view winners. Administrators create dated challenges there. Builder badges appear in the account menu. See [challenge and badge setup](CHALLENGES.md) and apply the updated complete migration.

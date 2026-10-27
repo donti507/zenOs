@@ -1089,3 +1089,146 @@ RETURNS TABLE(id uuid,parent_id uuid,title text,author text,depth integer) LANGU
 $$;
 REVOKE ALL ON FUNCTION public.publish_space_gallery(uuid,uuid,uuid,text,text,text),public.withdraw_space_gallery(uuid,uuid),public.report_space_gallery(uuid,uuid,text),public.moderate_space_gallery(uuid,text),public.remix_space_gallery(uuid,uuid,uuid,text,text,uuid),public.space_gallery_tree(uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.publish_space_gallery(uuid,uuid,uuid,text,text,text),public.withdraw_space_gallery(uuid,uuid),public.report_space_gallery(uuid,uuid,text),public.moderate_space_gallery(uuid,text),public.remix_space_gallery(uuid,uuid,uuid,text,text,uuid),public.space_gallery_tree(uuid) TO service_role;
+
+-- Weekly build challenges: public metadata is served only by the curated API.
+CREATE TABLE IF NOT EXISTS public.space_challenges (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ title text NOT NULL CHECK(char_length(btrim(title)) BETWEEN 1 AND 80),
+ description text NOT NULL CHECK(char_length(btrim(description)) BETWEEN 1 AND 1000),
+ starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL,
+ finalized boolean NOT NULL DEFAULT false,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ CHECK(ends_at>starts_at AND ends_at<=starts_at+interval '31 days')
+);
+CREATE TABLE IF NOT EXISTS public.space_challenge_entries (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ challenge_id uuid NOT NULL REFERENCES public.space_challenges(id) ON DELETE CASCADE,
+ gallery_id uuid NOT NULL REFERENCES public.space_gallery_pages(id) ON DELETE CASCADE,
+ winner boolean NOT NULL DEFAULT false,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(challenge_id,user_id), UNIQUE(challenge_id,gallery_id)
+);
+CREATE TABLE IF NOT EXISTS public.space_challenge_votes (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ challenge_id uuid NOT NULL REFERENCES public.space_challenges(id) ON DELETE CASCADE,
+ entry_id uuid NOT NULL REFERENCES public.space_challenge_entries(id) ON DELETE CASCADE,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(challenge_id,user_id)
+);
+CREATE TABLE IF NOT EXISTS public.space_badges (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ badge text NOT NULL CHECK(badge IN ('first_page','first_remix','challenge_winner','seven_day_streak')),
+ created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(user_id,badge)
+);
+CREATE TABLE IF NOT EXISTS public.space_activity_days (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ day date NOT NULL, UNIQUE(user_id,day)
+);
+CREATE INDEX IF NOT EXISTS space_challenges_owner_idx ON public.space_challenges(user_id);
+CREATE INDEX IF NOT EXISTS space_challenges_dates_idx ON public.space_challenges(ends_at);
+CREATE INDEX IF NOT EXISTS space_entries_owner_idx ON public.space_challenge_entries(user_id);
+CREATE INDEX IF NOT EXISTS space_votes_entry_idx ON public.space_challenge_votes(entry_id);
+CREATE INDEX IF NOT EXISTS space_votes_owner_idx ON public.space_challenge_votes(user_id);
+CREATE INDEX IF NOT EXISTS space_badges_owner_idx ON public.space_badges(user_id);
+CREATE INDEX IF NOT EXISTS space_activity_owner_idx ON public.space_activity_days(user_id);
+DO $$ DECLARE tab text; BEGIN
+ FOREACH tab IN ARRAY ARRAY['space_challenges','space_challenge_entries','space_challenge_votes','space_badges','space_activity_days'] LOOP
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',tab);
+  EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC,anon,authenticated',tab);
+  EXECUTE format('GRANT SELECT ON public.%I TO authenticated',tab);
+  EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.%I TO service_role',tab);
+  EXECUTE format('DROP POLICY IF EXISTS own_row ON public.%I',tab);
+  EXECUTE format('CREATE POLICY own_row ON public.%I FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id)',tab);
+ END LOOP;
+END $$;
+
+CREATE OR REPLACE FUNCTION public.submit_space_challenge(p_user_id uuid,p_challenge_id uuid,p_gallery_id uuid)
+RETURNS uuid LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE c public.space_challenges%ROWTYPE; existing public.space_challenge_entries%ROWTYPE; result uuid;
+BEGIN
+ SELECT * INTO c FROM public.space_challenges WHERE id=p_challenge_id FOR UPDATE;
+ IF NOT FOUND OR c.finalized OR now()<c.starts_at OR now()>=c.ends_at THEN RAISE EXCEPTION 'Challenge is not open'; END IF;
+ -- Publication lock serializes submission with moderation and withdrawal.
+ PERFORM 1 FROM public.space_gallery_pages WHERE id=p_gallery_id AND user_id=p_user_id AND published AND moderation='visible' FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Choose your own visible published page'; END IF;
+ SELECT * INTO existing FROM public.space_challenge_entries WHERE challenge_id=c.id AND user_id=p_user_id;
+ IF FOUND THEN
+  IF existing.gallery_id=p_gallery_id THEN RETURN existing.id; END IF;
+  RAISE EXCEPTION 'One submission per challenge';
+ END IF;
+ INSERT INTO public.space_challenge_entries(user_id,challenge_id,gallery_id) VALUES(p_user_id,c.id,p_gallery_id) RETURNING id INTO result;
+ RETURN result;
+END $$;
+CREATE OR REPLACE FUNCTION public.vote_space_challenge(p_user_id uuid,p_challenge_id uuid,p_entry_id uuid)
+RETURNS uuid LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE c public.space_challenges%ROWTYPE; existing public.space_challenge_votes%ROWTYPE;
+BEGIN
+ SELECT * INTO c FROM public.space_challenges WHERE id=p_challenge_id FOR UPDATE;
+ IF NOT FOUND OR c.finalized OR now()<c.starts_at OR now()>=c.ends_at THEN RAISE EXCEPTION 'Challenge is not open'; END IF;
+ PERFORM 1 FROM public.space_challenge_entries e JOIN public.space_gallery_pages p ON p.id=e.gallery_id WHERE e.id=p_entry_id AND e.challenge_id=c.id AND e.user_id<>p_user_id AND p.published AND p.moderation='visible' FOR SHARE OF p;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Choose another author visible entry'; END IF;
+ SELECT * INTO existing FROM public.space_challenge_votes WHERE challenge_id=c.id AND user_id=p_user_id;
+ IF FOUND THEN
+  IF existing.entry_id=p_entry_id THEN RETURN existing.entry_id; END IF;
+  RAISE EXCEPTION 'Vote already recorded';
+ END IF;
+ INSERT INTO public.space_challenge_votes(user_id,challenge_id,entry_id) VALUES(p_user_id,c.id,p_entry_id);
+ RETURN p_entry_id;
+END $$;
+-- Called after the deadline, lazily on reads; no scheduler or client time is trusted.
+CREATE OR REPLACE FUNCTION public.finalize_space_challenges()
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE c record;
+BEGIN
+ FOR c IN SELECT id FROM public.space_challenges WHERE NOT finalized AND ends_at<=now() ORDER BY id FOR UPDATE LOOP
+  WITH scores AS (
+   SELECT e.id,count(v.id) AS total FROM public.space_challenge_entries e
+   JOIN public.space_gallery_pages p ON p.id=e.gallery_id AND p.published AND p.moderation='visible'
+   LEFT JOIN public.space_challenge_votes v ON v.entry_id=e.id
+   WHERE e.challenge_id=c.id GROUP BY e.id
+  ) UPDATE public.space_challenge_entries SET winner=true WHERE id IN(SELECT id FROM scores WHERE total>0 AND total=(SELECT max(total) FROM scores));
+  INSERT INTO public.space_badges(user_id,badge) SELECT user_id,'challenge_winner' FROM public.space_challenge_entries WHERE challenge_id=c.id AND winner ON CONFLICT(user_id,badge) DO NOTHING;
+  UPDATE public.space_challenges SET finalized=true WHERE id=c.id;
+ END LOOP;
+END $$;
+CREATE OR REPLACE FUNCTION public.space_challenge_detail(p_id uuid,p_user_id uuid DEFAULT NULL)
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+ SELECT jsonb_build_object('challenge',jsonb_build_object('id',c.id,'title',c.title,'description',c.description,'startsAt',c.starts_at,'endsAt',c.ends_at,'finalized',c.finalized),
+ 'entries',coalesce((SELECT jsonb_agg(row ORDER BY (row->>'votes')::bigint DESC,row->>'id') FROM (
+ SELECT jsonb_build_object('id',e.id,'pageId',p.id,'title',p.title,'author',p.author,'votes',(SELECT count(*) FROM public.space_challenge_votes v WHERE v.entry_id=e.id),'winner',e.winner) AS row
+ FROM public.space_challenge_entries e JOIN public.space_gallery_pages p ON p.id=e.gallery_id AND p.published AND p.moderation='visible' WHERE e.challenge_id=c.id) AS visible),'[]'::jsonb),
+ 'myVote',(SELECT entry_id FROM public.space_challenge_votes WHERE challenge_id=c.id AND user_id=p_user_id),
+ 'myEntry',(SELECT id FROM public.space_challenge_entries WHERE challenge_id=c.id AND user_id=p_user_id))
+ FROM public.space_challenges c WHERE c.id=p_id;
+$$;
+CREATE OR REPLACE FUNCTION public.refresh_space_badges(p_user_id uuid)
+RETURNS TABLE(badge text,created_at timestamptz) LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE today_utc date=(now() AT TIME ZONE 'UTC')::date;
+BEGIN
+ -- Every observed signed-in activity day is recorded by the server, never supplied by the browser.
+ INSERT INTO public.space_activity_days(user_id,day) VALUES(p_user_id,today_utc) ON CONFLICT(user_id,day) DO NOTHING;
+ INSERT INTO public.space_badges(user_id,badge) SELECT p_user_id,'first_page' WHERE EXISTS(SELECT 1 FROM public.space_pages WHERE user_id=p_user_id) ON CONFLICT ON CONSTRAINT space_badges_user_id_badge_key DO NOTHING;
+ INSERT INTO public.space_badges(user_id,badge) SELECT p_user_id,'first_remix' WHERE EXISTS(SELECT 1 FROM public.space_pages WHERE user_id=p_user_id AND remix_source IS NOT NULL) ON CONFLICT ON CONSTRAINT space_badges_user_id_badge_key DO NOTHING;
+ INSERT INTO public.space_badges(user_id,badge) SELECT p_user_id,'seven_day_streak' WHERE (SELECT count(*) FROM public.space_activity_days WHERE user_id=p_user_id AND day BETWEEN today_utc-6 AND today_utc)=7 ON CONFLICT ON CONSTRAINT space_badges_user_id_badge_key DO NOTHING;
+ RETURN QUERY SELECT b.badge,b.created_at FROM public.space_badges b WHERE b.user_id=p_user_id ORDER BY b.created_at,b.badge;
+END $$;
+REVOKE ALL ON FUNCTION public.submit_space_challenge(uuid,uuid,uuid),public.vote_space_challenge(uuid,uuid,uuid),public.finalize_space_challenges(),public.space_challenge_detail(uuid,uuid),public.refresh_space_badges(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_space_challenge(uuid,uuid,uuid),public.vote_space_challenge(uuid,uuid,uuid),public.finalize_space_challenges(),public.space_challenge_detail(uuid,uuid),public.refresh_space_badges(uuid) TO service_role;
+-- Award creation milestones at the write, even if a page is later deleted.
+CREATE OR REPLACE FUNCTION public.award_space_creation_badges()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ INSERT INTO public.space_badges(user_id,badge) VALUES(NEW.user_id,'first_page') ON CONFLICT(user_id,badge) DO NOTHING;
+ IF NEW.remix_source IS NOT NULL THEN INSERT INTO public.space_badges(user_id,badge) VALUES(NEW.user_id,'first_remix') ON CONFLICT(user_id,badge) DO NOTHING; END IF;
+ RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.award_space_creation_badges() FROM PUBLIC,anon,authenticated;
+DROP TRIGGER IF EXISTS space_creation_badges ON public.space_pages;
+CREATE TRIGGER space_creation_badges AFTER INSERT ON public.space_pages FOR EACH ROW EXECUTE FUNCTION public.award_space_creation_badges();
+INSERT INTO public.space_badges(user_id,badge) SELECT DISTINCT user_id,'first_page' FROM public.space_pages ON CONFLICT(user_id,badge) DO NOTHING;
+INSERT INTO public.space_badges(user_id,badge) SELECT DISTINCT user_id,'first_remix' FROM public.space_pages WHERE remix_source IS NOT NULL ON CONFLICT(user_id,badge) DO NOTHING;

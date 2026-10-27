@@ -7,6 +7,7 @@ import AccountControls from '../AccountControls';
 const account = vi.hoisted(() => ({
   user: { id: 'signed-in' } as { id: string } | null,
   isOffline: false,
+  buildBadges: [] as {key:'first_page'|'first_remix'|'challenge_winner'|'seven_day_streak';earnedAt:string}[],
   billing: null as { enabled: boolean; plan: 'free' | 'pro'; hasCustomer?: boolean } | null,
   startBilling: vi.fn(),
   exportMyData: vi.fn(),
@@ -26,6 +27,7 @@ beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   account.user = { id: 'signed-in' };
   account.isOffline = false;
+  account.buildBadges = [];
   account.billing = null; account.startBilling.mockReset().mockResolvedValue(undefined);
   account.exportMyData.mockReset().mockResolvedValue(undefined);
   account.deleteMyAccount.mockReset().mockResolvedValue(undefined);
@@ -105,4 +107,9 @@ it('opens the portal for Pro and reports billing errors accessibly', async () =>
 it('lets a free customer manage a past-due or canceled subscription', async () => {
   account.billing = { enabled: true, plan: 'free', hasCustomer: true }; await render();
   await click('Manage subscription'); expect(account.startBilling).toHaveBeenCalledWith('portal');
+});
+
+it('shows earned builder badges in cloud and local account menus',async()=>{
+ account.buildBadges=[{key:'challenge_winner',earnedAt:'2026-10-27'}];await render();expect(host.querySelector('[aria-label="Your builder badges"]')?.textContent).toContain('Challenge winner');
+ account.buildBadges=[{key:'first_remix',earnedAt:'2026-10-27'}];account.isOffline=true;await render();expect(host.textContent).toContain('First remix');expect(host.textContent).not.toContain('Export my data');
 });

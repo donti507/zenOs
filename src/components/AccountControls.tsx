@@ -1,15 +1,17 @@
+import BuildBadges from './BuildBadges';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useZenos } from '../context/ZenosContext';
 import { Modal, btn } from './ui/kit';
 
 export default function AccountControls() {
-  const { user, isOffline, exportMyData, deleteMyAccount, billing, startBilling } = useZenos();
+  const { user, isOffline, exportMyData, deleteMyAccount, billing, startBilling, buildBadges = [] } = useZenos();
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState<'export' | 'delete' | 'checkout' | 'portal' | null>(null);
   const [error, setError] = useState('');
   const running = useRef(false);
-  if (!user || isOffline) return null;
+  if (!user) return null;
+  if (isOffline) return <BuildBadges badges={buildBadges} />;
 
   const run = async (action: 'export' | 'delete' | 'checkout' | 'portal') => {
     if (running.current) return;
@@ -26,6 +28,7 @@ export default function AccountControls() {
   };
   const close = () => { if (!running.current) { setConfirm(false); setError(''); } };
   return <>
+    <BuildBadges badges={buildBadges} />
     {billing?.enabled && <>
       <button role="menuitem" disabled={!!busy} className="w-full px-3 py-2 text-left text-primary hover:bg-surface-container disabled:opacity-50 cursor-pointer" onClick={() => run(billing.plan === 'pro' ? 'portal' : 'checkout')}>
         {busy === 'checkout' || busy === 'portal' ? 'Opening billing…' : billing.plan === 'pro' ? 'Manage subscription' : 'Upgrade to Pro'}
