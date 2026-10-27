@@ -543,6 +543,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   // ---------- Tasks ----------
   const addTask = async (taskData: Omit<Task, 'id'>): Promise<Task | null> => {
     if (!userRef.current) return null;
+    const ownerId = userRef.current.id;
     taskData = { ...taskData, postponedCount: 0, recurrence: isRecurrence(taskData.recurrence) ? taskData.recurrence : 'none' };
     if (taskData.recurrence !== 'none' && !calendarDate(taskData.date)) taskData.date = today();
     taskData.recurrenceDay = calendarDate(taskData.date)?.getDate() || null;
@@ -555,7 +556,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       const { data, error } = await supabase
         .from('tasks')
         .insert({
-          user_id: userRef.current.id,
+          user_id: ownerId,
           title: taskData.title,
           cat: taskData.cat,
           status: taskData.status,
@@ -571,6 +572,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         .select()
         .single();
       if (error) throw error;
+      if (userRef.current?.id !== ownerId) return null;
       const task = mapTask(data);
       setState(s => ({ ...s, tasks: [...s.tasks, task] }));
       return task;
@@ -709,6 +711,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   // ---------- Meetings (now persisted) ----------
   const addMeeting = async (m: NewMeeting): Promise<Meeting | null> => {
     if (!userRef.current) return null;
+    const ownerId = userRef.current.id;
     if (offlineRef.current) {
       const meeting: Meeting = { ...m, id: newId(), createdAt: new Date().toISOString() };
       setState(s => ({ ...s, meetings: [meeting, ...(s.meetings || [])] }));
@@ -717,10 +720,11 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from('meetings')
-        .insert({ ...meetingToRow(m), user_id: userRef.current.id })
+        .insert({ ...meetingToRow(m), user_id: ownerId })
         .select()
         .single();
       if (error) throw error;
+      if (userRef.current?.id !== ownerId) return null;
       const meeting = mapMeeting(data);
       setState(s => ({ ...s, meetings: [meeting, ...(s.meetings || [])] }));
       return meeting;

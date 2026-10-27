@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createSnapHandler, snapImageBody } from './server/snap';
 import { createDailyUsage } from './server/dailyUsage';
 import { initServerMonitoring, captureServerError, captureExpressError } from './server/monitoring';
 import path from 'path';
@@ -20,6 +21,7 @@ async function startServer() {
   const daily = createDailyUsage({ key: process.env.SUPABASE_SERVICE_ROLE_KEY, url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, limit: process.env.DANTE_DAILY_LIMIT });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+  app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));

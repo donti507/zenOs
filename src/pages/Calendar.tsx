@@ -1,3 +1,4 @@
+import SnapSyllabus from '../components/SnapSyllabus';
 import { useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -93,6 +94,7 @@ export default function Calendar() {
         subtitle={accessToken ? (loadingEvents ? 'Syncing Google Calendar…' : 'Tasks, meetings and Google Calendar in one place.') : 'Tasks and meetings by day.'}
         actions={
           <>
+            <SnapSyllabus />
             <Segmented label="Calendar view" value={view} onChange={setView} options={[{ value: 'month', label: 'Month' }, { value: 'week', label: 'Week' }]} />
             <button className={btn.primary} onClick={() => addOn(selected, 'addTask')}><Icon name="add" className="text-[18px]" />Task on {relDay(selected)}</button>
           </>

@@ -1,3 +1,4 @@
+import SnapSyllabus from '../components/SnapSyllabus';
 import PostponedTasks from '../components/PostponedTasks';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -146,6 +147,7 @@ export default function Home() {
               {overdue.length > 0 && <>, <strong className="text-error font-medium">{overdue.length} overdue</strong></>}
               {' '}and <strong className="text-on-surface font-medium">{meetingsToday} meeting{meetingsToday === 1 ? '' : 's'}</strong> scheduled.
             </p>
+            <div className="mt-2"><SnapSyllabus /></div>
             <div className="pt-1 flex flex-wrap items-center gap-3 text-[12px] text-on-surface-variant">
               <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-lg">
                 <span className="material-symbols-outlined text-[16px] text-warning">local_fire_department</span>

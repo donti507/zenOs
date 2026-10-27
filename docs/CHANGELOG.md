@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added Snap a syllabus on Home/Calendar, authenticated rate-limited vision extraction with a 5 MB image cap, lazy single-page PDF rendering, editable opt-in review and task/exam/meeting creation, with regression coverage. (Codex)
+
 - 2026-10-27: Added atomic/local postpone counting, gentle Home cards after three later-date moves, append-only three-step Dante breakdowns, and a five-minute focus timer that survives workspace navigation; added SQL/date/action/UI tests. Apply the updated SQL migration. (Codex)
 
 - 2026-10-26: Added recurring tasks (daily/weekdays/weekly/monthly), atomic completion successors and monthly anchors, one-time browser reminder permission and foreground scheduling, Dante repeat actions, import preservation, and regression coverage. Apply the updated SQL migration. (Codex)
