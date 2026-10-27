@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added Dante long-term memory with per-user RLS, atomic 100-fact quota and 200-character validation, remember/confirmed forget actions for chat and Live, server-loaded 30-fact prompt data, a responsive inspect/delete panel with mobile composer clearance, local persistence, account export/cascade support and SQL/server/client regression tests. Apply the latest migration. (Codex)
+
 - 2026-10-27: Added per-user private Supabase Realtime Broadcast for tasks/categories/meetings/vault, duplicate-safe state merging and local-write echoes, delete/snapshot race guards, reconnect recovery, sign-out/account/local-mode cleanup, scoped SQL authorization and regression tests. Apply the updated migration and enable Realtime. (Codex)
 
 - 2026-10-27: Added service-role-only Google Calendar refresh-token storage, authenticated offline-consent/refresh/disconnect endpoints, automatic expiry/401 renewal for reads and meeting creation, server restoration and account/disconnect race guards, responsive disconnect controls, setup documentation and API/SQL/client regression tests; local mode remains independent. Apply the migration and reconnect Calendar once. (Codex)

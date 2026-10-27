@@ -30,7 +30,7 @@ describe('account data', () => {
     const result = await exportAccountData(client, 'user-a');
     for (const table of ACCOUNT_TABLES) expect(result).toHaveProperty(table);
     expect((result as any).dante_messages).toHaveLength(523);
-    expect(queries).toHaveLength(6);
+    expect(queries).toHaveLength(ACCOUNT_TABLES.length + 1);
     expect(queries.every(q => q.userId === 'user-a')).toBe(true);
     expect(queries.filter(q => q.table === 'dante_messages').map(q => q.offset)).toEqual([0, 500]);
     expect(result.version).toBe(1);

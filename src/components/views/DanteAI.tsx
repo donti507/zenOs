@@ -1,3 +1,4 @@
+import DanteMemoryPanel from '../DanteMemoryPanel';
 import DanteUsageNotice from '../DanteUsageNotice';
 "use client";
 
@@ -60,6 +61,7 @@ export default function DanteAI() {
     addMeeting,
     saveDanteMessage,
     clearDanteHistory,
+    rememberFact, forgetFact, confirmForgetFact,
     googleEvents,
     user,
     isOffline,
@@ -111,7 +113,7 @@ export default function DanteAI() {
   const runActions = async (msg: DanteMessage) => {
     const actions = parseActions(msg.content);
     if (!actions.length) return;
-    const results = await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState });
+    const results = await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact });
     setActionResults(r => ({ ...r, [msg.ts]: results }));
   };
 
@@ -332,8 +334,9 @@ export default function DanteAI() {
   const canSend = !!input.trim() && !loading;
 
   return (
-    <div className="flex flex-col h-full bg-surface-container-lowest md:rounded-xl shadow-soft overflow-hidden">
+    <div className="flex flex-col min-h-0 h-full bg-surface-container-lowest md:rounded-xl shadow-soft overflow-hidden">
       <DanteUsageNotice />
+      <DanteMemoryPanel />
       {/* Header */}
       <div className="px-4 py-3 border-b border-outline-variant flex items-center gap-3 bg-surface-container-lowest shrink-0 select-none">
         <DanteOrb
@@ -434,7 +437,7 @@ export default function DanteAI() {
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-4 w-full max-w-4xl mx-auto" aria-live="polite">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6 flex flex-col gap-4 w-full max-w-4xl mx-auto" aria-live="polite">
         {state.danteHistory.length === 0 && !loading && (
           <div className="flex gap-2.5 max-w-[85%]">
             <DanteOrb size={28} className="mt-1" />

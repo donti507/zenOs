@@ -1,3 +1,5 @@
+import { MEMORY_LIMIT, memoryFromRow, recentMemory, validateMemoryFact, type DanteMemory } from '../../shared/danteMemory';
+import { useDanteMemoryConfirmation } from '../components/DanteMemoryConfirmation';
 import { mapTask, mapMeeting, mapCategory, mapVaultItem, completionLogFromTasks, mergeWorkspaceChange, insertWorkspaceRow, readWorkspaceChange, workspaceTopic, type WorkspaceChange, type WorkspaceTable } from '../lib/workspaceRealtime';
 import { planExam, remainingExamTasks, examSnapshot, type ExamDraft } from '../lib/examPlanner';
 import { applyPostponement } from '../lib/postponement';
@@ -35,6 +37,7 @@ const DEFAULT_STATE: ZenosState = {
   specialTasks: [],
   vault: [],
   danteHistory: [],
+  danteMemory: [],
   completionLog: [],
   selectedDate: null,
   meetings: [],
@@ -49,6 +52,7 @@ const LS = {
   dante: 'zenos_dante_history',
   completion: 'zenos_completion_log',
   theme: 'zenos_theme',
+  memory: 'zenos_dante_memory',
 };
 
 const DANTE_HISTORY_LIMIT = 40;
@@ -137,6 +141,12 @@ interface ZenosContextType {
   setShowBriefing: (show: boolean) => void;
   saveDanteMessage: (role: 'user' | 'assistant', content: string) => Promise<DanteMessage>;
   clearDanteHistory: () => Promise<void>;
+  memoryLoading: boolean;
+  memoryError: string | null;
+  refreshDanteMemory: () => Promise<void>;
+  rememberFact: (fact: string) => Promise<DanteMemory>;
+  forgetFact: (id: string) => Promise<void>;
+  confirmForgetFact: (fact: DanteMemory) => Promise<boolean>;
   notificationPermission: NotificationPermission | 'unsupported';
   canAskNotifications: boolean;
   enableTaskNotifications: () => Promise<void>;
@@ -165,6 +175,10 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   }));
   const stateRef = useRef(state);
   stateRef.current = state;
+  const memoryRef = useRef(state.danteMemory || []); memoryRef.current = state.danteMemory || [];
+  const memoryRead = useRef(0);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
 
   const [localImportOpen, setLocalImportOpen] = useState(false);
   const [localImportBusy, setLocalImportBusy] = useState(false);
@@ -205,6 +219,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   offlineRef.current = isOffline;
   const userRef = useRef(user);
   userRef.current = user;
+  const { confirmForgetFact, dialog: memoryDialog } = useDanteMemoryConfirmation(user?.id ?? null);
   const getAuthToken = useCallback(async () => {
     if (!SUPABASE_CONFIGURED || userRef.current?.id === OFFLINE_USER_ID) return null;
     const { data } = await supabase.auth.getSession();
@@ -239,6 +254,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       vault: readLS<VaultItem[]>(LS.vault, []),
       meetings: readLS<Meeting[]>(LS.meetings, []),
       danteHistory: readLS<DanteMessage[]>(LS.dante, []),
+      danteMemory: recentMemory(readLS(LS.memory, []), MEMORY_LIMIT),
       completionLog: readLS<string[]>(LS.completion, []),
     }));
   };
@@ -251,8 +267,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     writeLS(LS.vault, state.vault);
     writeLS(LS.meetings, state.meetings || []);
     writeLS(LS.dante, state.danteHistory.slice(-DANTE_HISTORY_LIMIT));
+    writeLS(LS.memory, state.danteMemory || []);
     writeLS(LS.completion, state.completionLog.slice(-2000));
-  }, [isOffline, state.tasks, state.categories, state.vault, state.meetings, state.danteHistory, state.completionLog]);
+  }, [isOffline, state.tasks, state.categories, state.vault, state.meetings, state.danteHistory, state.danteMemory, state.completionLog]);
 
   useEffect(() => { writeLS(LS.theme, state.theme); }, [state.theme]);
 
@@ -919,6 +936,69 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     loadLocalData();
   };
 
+  // ---------- Durable Dante facts (separate from chat history) ----------
+  const refreshDanteMemory = useCallback(async () => {
+    const owner = userRef.current?.id;
+    const request = ++memoryRead.current;
+    if (!owner || offlineRef.current) return;
+    setMemoryLoading(true);
+    try {
+      const { data, error } = await supabase.from('dante_memory').select('id,fact,created_at').eq('user_id', owner).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(MEMORY_LIMIT);
+      if (error) throw new Error('Memory unavailable');
+      if (request !== memoryRead.current || workspaceOwner.current !== owner || offlineRef.current) return;
+      const memory = recentMemory(data, MEMORY_LIMIT); memoryRef.current = memory;
+      setState(s => ({ ...s, danteMemory: memory })); setMemoryError(null);
+    } catch {
+      if (request === memoryRead.current && workspaceOwner.current === owner) setMemoryError('Could not load saved facts. Try again after applying the latest database migration.');
+    } finally { if (request === memoryRead.current) setMemoryLoading(false); }
+  }, []);
+  useEffect(() => {
+    setMemoryError(null); setMemoryLoading(false);
+    if (!user || isOffline) return;
+    void refreshDanteMemory();
+    const refresh = () => { void refreshDanteMemory(); };
+    window.addEventListener('focus', refresh);
+    return () => { ++memoryRead.current; window.removeEventListener('focus', refresh); };
+  }, [user?.id, isOffline, refreshDanteMemory]);
+
+  const rememberFact = async (rawFact: string): Promise<DanteMemory> => {
+    const fact = validateMemoryFact(rawFact);
+    const owner = user?.id;
+    if (!owner || userRef.current?.id !== owner || offlineRef.current !== isOffline || workspaceOwner.current !== (isOffline ? null : owner)) throw new Error('Your account changed. Please try again.');
+    let saved: DanteMemory;
+    if (isOffline) {
+      const existing = memoryRef.current.find(row => row.fact === fact);
+      if (existing) return existing;
+      if (memoryRef.current.length >= MEMORY_LIMIT) throw new Error('Dante can remember at most 100 facts. Forget a fact first.');
+      saved = { id: newId(), fact, createdAt: new Date().toISOString() };
+    } else {
+      const { data, error } = await supabase.rpc('remember_dante_fact', { p_fact: fact, p_owner: owner });
+      if (error) throw new Error(error.message?.includes('Dante memory limit reached') ? 'Dante can remember at most 100 facts. Forget a fact first.' : 'Could not save this fact. Please try again.');
+      saved = memoryFromRow(data);
+    }
+    if (userRef.current?.id !== owner || offlineRef.current !== isOffline || workspaceOwner.current !== (isOffline ? null : owner)) throw new Error('Your account changed. Please try again.');
+    ++memoryRead.current; setMemoryLoading(false);
+    const memory = recentMemory([saved, ...memoryRef.current.filter(row => row.id !== saved.id)], MEMORY_LIMIT);
+    memoryRef.current = memory;
+    setState(s => ({ ...s, danteMemory: memory })); setMemoryError(null);
+    if (isOffline) writeLS(LS.memory, memory);
+    return saved;
+  };
+  const forgetFact = async (id: string) => {
+    const owner = user?.id;
+    if (typeof id !== 'string' || !id || id.length > 64) throw new Error('Invalid memory ID.');
+    if (!owner || userRef.current?.id !== owner || offlineRef.current !== isOffline || workspaceOwner.current !== (isOffline ? null : owner)) throw new Error('Your account changed. Please try again.');
+    if (!isOffline) {
+      const { error } = await supabase.from('dante_memory').delete().eq('user_id', owner).eq('id', id);
+      if (error) throw new Error('Could not forget this fact. Please try again.');
+    }
+    if (userRef.current?.id !== owner || offlineRef.current !== isOffline || workspaceOwner.current !== (isOffline ? null : owner)) return;
+    ++memoryRead.current; setMemoryLoading(false);
+    const memory = memoryRef.current.filter(row => row.id !== id); memoryRef.current = memory;
+    setState(s => ({ ...s, danteMemory: memory })); setMemoryError(null);
+    if (isOffline) writeLS(LS.memory, memory);
+  };
+
   // ---------- Dante chat memory ----------
   const saveDanteMessage = async (role: 'user' | 'assistant', content: string): Promise<DanteMessage> => {
     const msg: DanteMessage = { role, content, ts: Date.now() };
@@ -989,6 +1069,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         setShowBriefing,
         saveDanteMessage,
         clearDanteHistory,
+        memoryLoading, memoryError, refreshDanteMemory, rememberFact, forgetFact, confirmForgetFact,
         ...taskNotifications,
         getAuthToken,
         danteUsage: usageState.userId === user?.id ? usageState.data : null,
@@ -1005,6 +1086,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       }}
     >
       {children}
+      {memoryDialog}
     </ZenosContext.Provider>
   );
 };

@@ -5,6 +5,7 @@ const db = new PGlite();
 const a = '00000000-0000-0000-0000-000000000001';
 beforeAll(async () => {
   await db.exec(`CREATE SCHEMA auth; CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('test.uid',true),'')::uuid $$;
     CREATE TABLE auth.users(id uuid PRIMARY KEY); INSERT INTO auth.users VALUES ('${a}');
     GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role,anon;`);
   const all = readFileSync('supabase-schema-update.sql', 'utf8');

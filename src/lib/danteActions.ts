@@ -1,3 +1,4 @@
+import { validateMemoryFact, type DanteMemory } from '../../shared/danteMemory';
 import { isRecurrence } from './recurrence';
 import { Task, Meeting, ZenosState } from '../types';
 import { today } from './utils';
@@ -7,6 +8,9 @@ export type ActionResult = { label: string; ok: boolean; detail?: string };
 
 export interface ActionDeps {
   stateRef: { current: ZenosState };
+  rememberFact?: (fact: string) => Promise<DanteMemory>;
+  forgetFact?: (id: string) => Promise<void>;
+  confirmForgetFact?: (fact: DanteMemory) => Promise<boolean>;
   addTask: (t: Omit<Task, 'id'>) => Promise<Task | null>;
   editTask: (id: number | string, u: Partial<Task>) => Promise<void>;
   toggleTaskDone: (id: number | string) => Promise<void>;
@@ -45,6 +49,21 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
   const executeAction = async (a: DanteAction): Promise<ActionResult> => {
     const d = a.data || {};
     switch (a.action) {
+      case 'remember': {
+        const fact = validateMemoryFact(d.fact);
+        if (!deps.rememberFact) return { label: 'Remember fact', ok: false, detail: 'Memory is unavailable' };
+        await deps.rememberFact(fact);
+        return { label: 'Remember fact', ok: true };
+      }
+      case 'forget': {
+        if (typeof d.id !== 'string' || !d.id || d.id.length > 64) return { label: 'Forget fact', ok: false, detail: 'Invalid memory ID' };
+        const memory = stateRef.current.danteMemory?.find(row => row.id === d.id);
+        if (!memory) return { label: 'Forget fact', ok: false, detail: 'No saved fact matches that ID' };
+        if (!deps.forgetFact || !deps.confirmForgetFact) return { label: 'Forget fact', ok: false, detail: 'Confirmation is required' };
+        if (!await deps.confirmForgetFact(memory)) return { label: 'Forget fact', ok: false, detail: 'Canceled' };
+        await deps.forgetFact(memory.id);
+        return { label: 'Forget fact', ok: true };
+      }
       case "create_task": {
         if (d.repeat !== undefined && !isRecurrence(d.repeat)) return { label: 'Create task', ok: false, detail: 'Invalid repeat option' };
         if (!d.title) return { label: "Create task", ok: false, detail: "No title given" };

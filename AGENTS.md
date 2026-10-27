@@ -58,7 +58,7 @@ Client sends `{messages, context}` to `POST /api/dante` → server builds the sy
 ```json
 {"actions":[{"action":"create_task","data":{"title":"…","date":"YYYY-MM-DD","cat":"…"}}]}
 ```
-Supported: `create_task, complete_task, reopen_task, update_task, add_task_steps, create_meeting, switch_view, filter_category`. `context.mode = "voice"` makes replies short and speakable.
+Supported: `create_task, complete_task, reopen_task, update_task, add_task_steps, create_meeting, switch_view, filter_category, remember, forget`. `context.mode = "voice"` makes replies short and speakable.
 
 ## Environment (.env)
 `LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET`. See `.env.example`.
@@ -136,3 +136,8 @@ Billing state/actions go through `useZenos()`. Account menus show Upgrade to Pro
 `src/lib/workspaceRealtime.ts` shares cloud row mapping and duplicate-safe change merging. ZenosContext subscribes to a single private `zenos:workspace:<user UUID>` Broadcast channel only for a loaded signed-in cloud account; it removes that channel on sign-out/account/local-mode changes and ignores late callbacks/reads. Source-table triggers and scoped receive/publisher policies in the SQL migration authorize only that user's rows, including DELETE (Postgres Changes cannot filter deletes). Never replace this with a global/unfiltered delete feed or enable client publishing on this topic prefix.
 
 On channel join/rejoin, reconcile only the four workspace tables and replay broadcasts received during the read. Preserve chat/UI state, task field mappings/completion history and idempotent mutation responses; local mode stays independent. Apply the SQL migration and enable Supabase Realtime before live testing; see docs/REALTIME.md.
+
+## Dante long-term memory
+`dante_memory` stores at most 100 own-account facts (1–200 Unicode characters) with UUID IDs and timestamps; apply the migration for RLS, an atomic trigger quota and idempotent owner-bound `remember_dante_fact`. Memory reads/writes go through ZenosContext with an independent localStorage path in local mode. The `remember` and `forget` actions work in chat and Live; forgetting requires the shared confirmation dialog before deleting by exact ID. Never save inferred/sensitive facts silently.
+
+`server/memory.ts` replaces authenticated client memory with the verified user's 30 newest database facts using their JWT/RLS, and the prompt includes only bounded JSON data, never trusted instructions. Local/anonymous prompts use validated local facts. The Dante page panel shows all saved facts for inspection and confirmed deletion; focus/manual refresh picks up cloud changes. Account changes cancel confirmations and ignore stale responses. Account export includes cloud facts; account deletion cascades them. Facts are sent to the configured AI provider when chatting; never log them or include them in monitoring. See docs/DANTE_MEMORY.md.

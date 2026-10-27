@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createDanteMemoryReader } from './server/memory';
 import { createGoogleTokens } from './server/google';
 import { createBilling } from './server/billing';
 import { createSnapHandler, snapImageBody } from './server/snap';
@@ -21,6 +22,7 @@ async function startServer() {
   await initServerMonitoring();
   const app = express();
   const billing = createBilling();
+  const readMemory = createDanteMemoryReader();
   app.post('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '1mb' }), billing.webhook);
   const daily = createDailyUsage({ isPro: billing.isPro, key: process.env.SUPABASE_SERVICE_ROLE_KEY, url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, limit: process.env.DANTE_DAILY_LIMIT });
   app.set('trust proxy', 1);
@@ -78,7 +80,10 @@ async function startServer() {
     // Most chat servers require the first non-system message to be from the user
     while (history.length && history[0].role !== 'user') history.shift();
 
-    const full: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(context) }, ...history];
+    let promptContext;
+    try { promptContext = await readMemory((req as any).userId, req.headers.authorization, context); }
+    catch { return res.status(503).json({ error: 'Dante could not load your saved memory. Please try again.' }); }
+    const full: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(promptContext) }, ...history];
 
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
@@ -108,7 +113,7 @@ async function startServer() {
       if (abort.signal.aborted) return;
       const message = err instanceof LLMError ? err.message : 'Unexpected error talking to the AI.';
       captureServerError(err);
-      console.error('[dante]', err);
+      console.error('[dante] request failed');
       if (!started) {
         // Headers not sent yet → normal JSON error with a real status code
         res.status(err instanceof LLMError ? err.status : 500).json({ error: message });
