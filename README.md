@@ -79,3 +79,5 @@ The Supabase URL and anon key are injected at runtime, so the same image works i
 | `npm run typecheck` | TypeScript check |
 
 Lecture recording, transcription and study-guide setup: [docs/LECTURES.md](docs/LECTURES.md). Requires FFmpeg/ffprobe on the server and the latest SQL migration.
+
+Semantic search and Dante source citations: [docs/SEARCH.md](docs/SEARCH.md). Requires pgvector, server embedding configuration and the latest SQL migration.

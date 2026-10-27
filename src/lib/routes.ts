@@ -4,6 +4,7 @@ export const ROUTES = [
   { view: 'tasks', path: '/tasks', label: 'All tasks', icon: 'checklist' },
   { view: 'kanban', path: '/board', label: 'Board', icon: 'view_kanban' },
   { view: 'calendar', path: '/calendar', label: 'Calendar', icon: 'calendar_today' },
+  { view: 'search', path: '/search', label: 'Search', icon: 'search' },
   { view: 'lectures', path: '/lectures', label: 'Lectures', icon: 'school' },
   { view: 'meetings', path: '/meetings', label: 'Meetings', icon: 'videocam' },
   { view: 'analytics', path: '/analytics', label: 'Analytics', icon: 'monitoring' },

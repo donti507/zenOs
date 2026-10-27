@@ -1,3 +1,4 @@
+import { localSearchSources } from './search';
 import { recentMemory } from '../../shared/danteMemory';
 import { notifyDanteUsage } from './usageEvents';
 import { ZenosState, DanteMessage } from '../types';
@@ -43,18 +44,20 @@ export function toSpeech(text: string) {
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/[*_#>]+/g, ' ')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\/search\?type=\w+&id=[\w:-]+/g, '')
     .replace(/https?:\/\/\S+/g, 'link')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-export function buildDanteContext(state: ZenosState, googleEvents: any[], userName: string, language: string, mode: 'chat' | 'voice' = 'chat') {
+export function buildDanteContext(state: ZenosState, googleEvents: any[], userName: string, language: string, mode: 'chat' | 'voice' = 'chat', localMode = false) {
   const now = new Date();
   const todayStr = today();
   const tasks = state.tasks;
   const done = tasks.filter(t => t.status === 'done');
   return {
     mode,
+    localSearchSources: localMode ? localSearchSources(state).slice(0,100).map(row=>({...row,content:row.content.slice(0,2400)})) : undefined,
     memory: recentMemory(state.danteMemory),
     userName,
     language,
@@ -116,6 +119,8 @@ export async function streamDante(opts: {
   const decoder = new TextDecoder();
   let buffer = '';
   let full = '';
+  let readOnly = false;
+  const answer = () => readOnly ? visibleText(full) : full;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -127,15 +132,16 @@ export async function streamDante(opts: {
       const line = evt.split('\n').find(l => l.startsWith('data:'));
       if (!line) continue;
       const payload = line.slice(5).trim();
-      if (payload === '[DONE]') return full;
+      if (payload === '[DONE]') return answer();
       let parsed: any;
       try { parsed = JSON.parse(payload); } catch { continue; }
+      if (parsed.readOnly === true) readOnly = true;
       if (parsed.error) throw new DanteRequestError(parsed.error);
       if (parsed.text) {
         full += parsed.text;
-        opts.onText(full);
+        opts.onText(answer());
       }
     }
   }
-  return full;
+  return answer();
 }

@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
+import { createSemanticSearch } from './server/search';
+import { runDanteSearch, searchPromptData, searchSourceFooter } from './server/danteSearch';
 import { createLectures } from './server/lectures';
 import { createDanteMemoryReader } from './server/memory';
 import { createGoogleTokens } from './server/google';
@@ -35,6 +37,13 @@ async function startServer() {
   app.delete('/api/lectures/:id', requireUser, lectures.useJob, lectures.cancel);
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
+
+  const semanticSearch = createSemanticSearch();
+  if(process.env.SEARCH_INDEX_WORKER!=='false')semanticSearch.startWorker(async owner => (await daily.reserve(owner,'messages')).allowed);
+  app.get('/api/search/status', semanticSearch.status);
+  app.get('/api/search/source', requireUser, rateLimit, semanticSearch.source);
+  app.post('/api/search/index', requireUser, rateLimit, semanticSearch.prepareIndex, daily.count('messages'), semanticSearch.index);
+  app.post('/api/search', requireUser, rateLimit, semanticSearch.prepareQuery, daily.count('messages'), semanticSearch.query);
 
   const google = createGoogleTokens();
   app.post('/api/google/connect', requireUser, rateLimit, google.connect);
@@ -86,13 +95,20 @@ async function startServer() {
     // Most chat servers require the first non-system message to be from the user
     while (history.length && history[0].role !== 'user') history.shift();
 
-    let promptContext;
-    try { promptContext = await readMemory((req as any).userId, req.headers.authorization, context); }
-    catch { return res.status(503).json({ error: 'Dante could not load your saved memory. Please try again.' }); }
-    const full: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(promptContext) }, ...history];
-
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
+    let promptContext;
+    let searchResult;
+    try {
+      promptContext = await readMemory((req as any).userId, req.headers.authorization, context);
+      searchResult = await runDanteSearch({userId:(req as any).userId,authorization:req.headers.authorization||'',question:history.at(-1)!.content,localSources:context?.localSearchSources,search:semanticSearch,config:llm,signal:abort.signal});
+      // Never trust client-supplied retrieval results or tool status.
+      promptContext = {...promptContext,search:searchPromptData(searchResult)};
+    } catch {
+      if(abort.signal.aborted)return;
+      return res.status(503).json({ error: 'Dante could not load saved notes or memory. Check search setup and try again.' });
+    }
+    const full: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(promptContext) }, ...history];
 
     let started = false;
     const startStream = () => {
@@ -104,6 +120,7 @@ async function startServer() {
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering (nginx, Azure)
       res.flushHeaders();
+      if(searchResult.status==='searched')res.write(`data: ${JSON.stringify({readOnly:true})}\n\n`);
     };
 
     try {
@@ -113,6 +130,8 @@ async function startServer() {
       }
       if (abort.signal.aborted) return;
       startStream();
+      const footer=searchSourceFooter(searchResult.results);
+      if(footer)res.write(`data: ${JSON.stringify({text:footer})}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
     } catch (err: any) {

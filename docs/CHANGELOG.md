@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added pgvector semantic search over owned task/meeting notes, vault metadata and lecture summaries, revision-safe chunk indexing/backfill with quota-aware background work, validated 1024-dimensional embeddings, responsive source search/previews and a source-citing Dante read tool; retained local text search and added SQL/API/worker/client tests. Apply the migration and configure the embedding provider. (Codex)
+
 - 2026-10-27: Installed FFmpeg/ffprobe explicitly in GitHub CI for real lecture-audio tests and removed a wall-clock race from the processing-session expiry test; validated typecheck, all tests and build with CI's Node 22. (Codex)
 
 - 2026-10-27: Fixed managed Realtime migration compatibility by skipping unnecessary RLS ALTERs and atomically deferring policy/trigger setup on ownership denial, allowing later app tables to migrate without weakening channel isolation; added restricted-role regression coverage and troubleshooting instructions. (Codex)

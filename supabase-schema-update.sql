@@ -603,3 +603,141 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.add_lecture_task(uuid,integer,date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.add_lecture_task(uuid,integer,date) TO authenticated;
+
+-- Semantic note search. Supabase ships pgvector; plain test databases may omit it.
+DO $search_setup$
+DECLARE vector_schema text; source_table text; row_data jsonb;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
+    RAISE WARNING 'pgvector is unavailable; semantic search setup was skipped. Enable the vector extension before using semantic search.';
+    RETURN;
+  END IF;
+  CREATE SCHEMA IF NOT EXISTS extensions;
+  CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+  SELECT n.nspname INTO vector_schema FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='vector';
+  EXECUTE format('GRANT USAGE ON SCHEMA %I TO authenticated,service_role',vector_schema);
+  -- Resolve the actual extension schema: existing public installs also work.
+  EXECUTE replace($ddl$
+CREATE TABLE IF NOT EXISTS public.embeddings (
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  source_type text NOT NULL CHECK (source_type IN ('task','meeting','vault','lecture')),
+  source_id uuid NOT NULL,
+  chunk_index integer NOT NULL CHECK (chunk_index >= 0),
+  title text NOT NULL,
+  content text NOT NULL CHECK (char_length(content) BETWEEN 1 AND 2400),
+  embedding __VECTOR_SCHEMA__.vector(1024),
+  model text,
+  revision uuid NOT NULL DEFAULT gen_random_uuid(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,source_type,source_id,chunk_index)
+);
+CREATE INDEX IF NOT EXISTS embeddings_owner_model_idx ON public.embeddings(user_id,model);
+CREATE INDEX IF NOT EXISTS embeddings_cosine_idx ON public.embeddings USING hnsw(embedding __VECTOR_SCHEMA__.vector_cosine_ops);
+ALTER TABLE public.embeddings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.embeddings FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON public.embeddings TO authenticated;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.embeddings TO service_role;
+DROP POLICY IF EXISTS embeddings_select_own ON public.embeddings;
+CREATE POLICY embeddings_select_own ON public.embeddings FOR SELECT TO authenticated USING (auth.uid()=user_id);
+
+CREATE OR REPLACE FUNCTION public.search_source_document(kind text, item jsonb)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $fn$
+DECLARE title text; body text;
+BEGIN
+  CASE kind
+    WHEN 'task' THEN
+      IF btrim(coalesce(item->>'note',''))='' THEN RETURN NULL; END IF;
+      title := left(item->>'title',200); body := 'Task: ' || coalesce(item->>'title','') || E'\nNotes: ' || (item->>'note');
+    WHEN 'meeting' THEN
+      IF btrim(coalesce(item->>'notes',''))='' THEN RETURN NULL; END IF;
+      title := left(coalesce(item->>'person_name','') || ': ' || coalesce(item->>'subject',''),200);
+      body := 'Meeting with ' || coalesce(item->>'person_name','') || ' on ' || coalesce(item->>'date','') || ': ' || coalesce(item->>'subject','') || E'\nNotes: ' || (item->>'notes');
+    WHEN 'vault' THEN
+      title := left(item->>'name',200); body := coalesce(item->>'name','') || E'\n' || coalesce(item->>'detail','') || E'\n' || coalesce(item->>'url','');
+    WHEN 'lecture' THEN
+      title := left(item->>'title',200); body := 'Lecture: ' || coalesce(item->>'title','') || E'\nSummary: ' || coalesce(item->>'summary','');
+    ELSE RETURN NULL;
+  END CASE;
+  IF btrim(body)='' THEN RETURN NULL; END IF;
+  RETURN jsonb_build_object('title',coalesce(nullif(btrim(title),''),'Untitled'),'content',btrim(body));
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.search_source_document(text,jsonb) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.search_source_document(text,jsonb) TO authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.sync_search_document(kind text, item jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $fn$
+DECLARE doc jsonb := public.search_source_document(kind,item); owner_id uuid := (item->>'user_id')::uuid;
+  item_id uuid := (item->>'id')::uuid; body text; pos integer; idx integer := 0; piece text;
+BEGIN
+  IF owner_id IS NULL THEN RETURN; END IF;
+  IF doc IS NULL THEN DELETE FROM public.embeddings WHERE user_id=owner_id AND source_type=kind AND source_id=item_id; RETURN; END IF;
+  body := doc->>'content'; pos := 1;
+  WHILE pos <= char_length(body) LOOP
+    piece := substring(body FROM pos FOR 2000);
+    INSERT INTO public.embeddings AS saved(user_id,source_type,source_id,chunk_index,title,content)
+      VALUES(owner_id,kind,item_id,idx,doc->>'title',piece)
+      ON CONFLICT(user_id,source_type,source_id,chunk_index) DO UPDATE
+      SET title=EXCLUDED.title,content=EXCLUDED.content,embedding=NULL,model=NULL,revision=gen_random_uuid(),updated_at=now()
+      WHERE saved.content IS DISTINCT FROM EXCLUDED.content OR saved.title IS DISTINCT FROM EXCLUDED.title;
+    idx := idx+1;
+    IF pos+2000>char_length(body) THEN EXIT; END IF;
+    pos := pos+1800;
+  END LOOP;
+  DELETE FROM public.embeddings WHERE user_id=owner_id AND source_type=kind AND source_id=item_id AND chunk_index>=idx;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.sync_search_document(text,jsonb) FROM PUBLIC,anon,authenticated;
+
+CREATE OR REPLACE FUNCTION public.queue_search_document()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $fn$
+DECLARE kind text := TG_ARGV[0];
+BEGIN
+  IF TG_OP='DELETE' OR (TG_OP='UPDATE' AND OLD.user_id IS DISTINCT FROM NEW.user_id) THEN
+    DELETE FROM public.embeddings WHERE user_id=OLD.user_id AND source_type=kind AND source_id=OLD.id;
+  END IF;
+  IF TG_OP<>'DELETE' THEN PERFORM public.sync_search_document(kind,to_jsonb(NEW)); END IF;
+  RETURN NULL;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.queue_search_document() FROM PUBLIC,anon,authenticated;
+
+CREATE OR REPLACE FUNCTION public.save_search_embedding(p_user_id uuid,p_source_type text,p_source_id uuid,p_chunk_index integer,p_revision uuid,p_model text,p_embedding __VECTOR_SCHEMA__.vector)
+RETURNS boolean LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $fn$
+BEGIN
+  IF p_embedding IS NULL OR __VECTOR_SCHEMA__.vector_dims(p_embedding)<>1024 OR p_embedding OPERATOR(__VECTOR_SCHEMA__.<=>) p_embedding > 0.00001 THEN RAISE EXCEPTION 'Invalid 1024-dimensional embedding'; END IF;
+  UPDATE public.embeddings SET embedding=p_embedding,model=p_model
+    WHERE user_id=p_user_id AND source_type=p_source_type AND source_id=p_source_id AND chunk_index=p_chunk_index AND revision=p_revision;
+  RETURN FOUND;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.save_search_embedding(uuid,text,uuid,integer,uuid,text,__VECTOR_SCHEMA__.vector) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.save_search_embedding(uuid,text,uuid,integer,uuid,text,__VECTOR_SCHEMA__.vector) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.match_search_notes(p_embedding __VECTOR_SCHEMA__.vector,p_model text)
+RETURNS TABLE(source_type text,source_id uuid,title text,content text,score double precision)
+LANGUAGE sql SECURITY INVOKER SET search_path='' AS $fn$
+  -- Materialize the owner slice before ranking; never let a global ANN cutoff
+  -- underfill a user's results because other accounts have nearer vectors.
+  WITH owned AS MATERIALIZED (
+    SELECT * FROM public.embeddings WHERE user_id=auth.uid() AND model=p_model AND embedding IS NOT NULL
+  ), ranked AS (
+    SELECT e.source_type,e.source_id,e.title,e.content,1-(e.embedding OPERATOR(__VECTOR_SCHEMA__.<=>) p_embedding) AS score
+    FROM owned e
+  ), best AS (
+    SELECT DISTINCT ON (source_type,source_id) * FROM ranked WHERE score>=0.25 ORDER BY source_type,source_id,score DESC
+  ) SELECT * FROM best ORDER BY score DESC,source_type,source_id LIMIT 8;
+$fn$;
+REVOKE ALL ON FUNCTION public.match_search_notes(__VECTOR_SCHEMA__.vector,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.match_search_notes(__VECTOR_SCHEMA__.vector,text) TO authenticated;
+$ddl$, '__VECTOR_SCHEMA__', quote_ident(vector_schema));
+
+  FOREACH source_table IN ARRAY ARRAY['tasks','meetings','vault_items','lectures'] LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS zenos_search_document ON public.%I',source_table);
+    EXECUTE format('CREATE TRIGGER zenos_search_document AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.queue_search_document(%L)',source_table,CASE source_table WHEN 'tasks' THEN 'task' WHEN 'meetings' THEN 'meeting' WHEN 'vault_items' THEN 'vault' ELSE 'lecture' END);
+    FOR row_data IN EXECUTE format('SELECT to_jsonb(t) FROM public.%I t',source_table) LOOP
+      PERFORM public.sync_search_document(CASE source_table WHEN 'tasks' THEN 'task' WHEN 'meetings' THEN 'meeting' WHEN 'vault_items' THEN 'vault' ELSE 'lecture' END,row_data);
+    END LOOP;
+  END LOOP;
+END;
+$search_setup$;
