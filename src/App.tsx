@@ -17,6 +17,7 @@ const Tasks = lazy(() => import('./pages/Tasks'));
 const Kanban = lazy(() => import('./pages/Board'));
 const Calendar = lazy(() => import('./pages/Calendar'));
 const Meetings = lazy(() => import('./pages/Meetings'));
+const Space = lazy(() => import('./pages/Space'));
 const Search = lazy(() => import('./pages/Search'));
 const Lectures = lazy(() => import('./pages/Lectures'));
 const Analytics = lazy(() => import('./pages/Analytics'));
@@ -63,6 +64,8 @@ export function AppRoutes() {
         <Route path="board" element={<Kanban />} />
         <Route path="calendar" element={<Calendar />} />
         <Route path="meetings" element={<Meetings />} />
+        <Route path="space" element={<Space />} />
+        <Route path="space/:slug" element={<Space />} />
         <Route path="search" element={<Search />} />
         <Route path="lectures" element={<Lectures />} />
         <Route path="analytics" element={<Analytics />} />

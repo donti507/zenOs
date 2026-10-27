@@ -38,7 +38,7 @@ src/components/layout/    AppShell (sidebar, header, mobile nav, RouteSync), Sid
 src/components/ui/kit.tsx Design-system primitives: card, btn.*, input, Modal, Field, PageHeader, EmptyState, Segmented, CategoryChip, Icon
 src/components/DanteLive.tsx   Full-screen voice assistant
 src/components/views/DanteAI.tsx  Dante chat page
-src/pages/*.tsx           Home, Tasks, Board, Calendar, Meetings, Analytics, Vault, Lectures, Search, Login
+src/pages/*.tsx           Home, Tasks, Board, Calendar, Meetings, Analytics, Vault, Lectures, Search, Space, Login
 supabase-schema*.sql      DB schema + idempotent migration (run both)
 ```
 
@@ -61,7 +61,7 @@ Client sends `{messages, context}` to `POST /api/dante` → server builds the sy
 Supported: `create_task, complete_task, reopen_task, update_task, add_task_steps, create_meeting, switch_view, filter_category, remember, forget`. `context.mode = "voice"` makes replies short and speakable.
 
 ## Environment (.env)
-`LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, EMBEDDING_MODEL, SEARCH_INDEX_WORKER`. See `.env.example`.
+`LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, EMBEDDING_MODEL, SEARCH_INDEX_WORKER, SPACE_MODELS`. See `.env.example`.
 
 ## Known gaps / next work
 See `docs/ROADMAP.md`. Persistent Google Calendar access is documented in docs/GOOGLE_CALENDAR.md. Optional Stripe subscriptions are documented in docs/BILLING.md.
@@ -159,3 +159,12 @@ Apply the migration to enable pgvector and the own-user, read-only `embeddings` 
 `server/search.ts` owns quota-metered HTTP search/indexing and a durable-queue worker (`server/searchWorker.ts`). The worker shares `daily.reserve` with HTTP quota middleware, batches at most 16 sections, backs off on failure and defers exhausted accounts until UTC reset. Run one background indexer per database (`SEARCH_INDEX_WORKER=false` on other replicas); per-process locking is not a distributed lease. SQL tests use @electric-sql/pglite-pgvector; ordinary test databases without vector skip that optional section explicitly.
 
 `server/danteSearch.ts` exposes the read-only `search_notes` tool via a bounded server planner before the answer. Authenticated tool data is always loaded from owned rows, ignoring client sources. A turn's existing daily reservation covers tool work; no unmetered embedding/LLM endpoint is added. Inject evidence as bounded JSON data, require [S1] citations and honest missing/incomplete-evidence responses, and append server-generated source links. Mark cloud retrieval turns read-only over SSE and strip action JSON before displaying/saving/executing it in chat/Live. Never execute retrieval through client write actions. Markdown allows safe internal source links via React Router. See docs/SEARCH.md for model configuration, privacy and migration/reindex details.
+
+## My Space
+`src/pages/Space.tsx` hosts private `/space` and `/space/:slug` pages with an AI editor, append-only save-point timeline and explicit per-version data grants. Sidebar lists only the loaded account's pages. ZenosContext owns `useSpacePages`: own-row Supabase reads/RPCs online, independent IndexedDB pages/history offline. Account exports/cascades include both tables. Existing local import does not import IndexedDB pages.
+
+`server/space.ts` validates a server allowlist of up to three SPACE_MODELS (default active chat model), loads canonical owned code/history and atomically appends each successful edit before responding. Local generation accepts bounded local code under the existing anonymous policy. Admitted edits use the existing daily message reservation; cached UUID retries, invalid models and stale/unowned pages do no provider work. Failed local saves retain an in-memory draft for retry. RPC expected-version checks prevent stale edits/restores/grants; every code change resets grants.
+
+Render generated HTML/CSS/JS ONLY through `SpaceFrame` and `spaceSandbox.ts`: exact sandbox="allow-scripts", never allow-same-origin or another privilege. Parse HTML only in an inert detached template; never insert it in the app DOM. Preserve the first-meta CSP, script/style closing-tag escaping, no remote/eval sources, and the bootstrap's removal before untrusted code. Inline JS/CSS is deliberate; a nonce would allow remote scripts if untrusted code could copy it. Previews have an opaque origin and no app/cookie/storage/token access.
+
+The optional zen.tasks()/zen.events() bridge exposes only documented title/status/date/progress/event fields. Require host-only explicit consent, current-version permission checks on EVERY read, exact iframe source/origin, a private per-preview bootstrap capability and bounded methods/rate. Prove the original document over MessageChannel after load. Never send data to iframe.contentWindow via wildcard postMessage: a navigating frame could receive it. Replies use the transferred request port, sessions close on navigation/account/version/permission changes, and the bridge must never write app state or request tokens. See docs/MY_SPACE.md for the security boundary and verification.

@@ -1,3 +1,4 @@
+import { useSpacePages } from '../hooks/useSpacePages';
 import { useSemanticSearch } from '../hooks/useSemanticSearch';
 import { useLectures } from '../hooks/useLectures';
 import { MEMORY_LIMIT, memoryFromRow, recentMemory, validateMemoryFact, type DanteMemory } from '../../shared/danteMemory';
@@ -100,6 +101,18 @@ interface ZenosContextType {
   startTaskFocus: (taskId: Task['id']) => void;
   stopTaskFocus: () => void;
   state: ZenosState;
+  spacePages: import('../../shared/space').SpacePage[];
+  spacePagesLoading: boolean;
+  spacePagesError: string | null;
+  refreshSpacePages: () => Promise<void>;
+  createSpacePage: (title:string,slug:string) => Promise<import('../../shared/space').SpaceSnapshot>;
+  loadSpacePage: (slug:string) => Promise<import('../../shared/space').SpaceSnapshot>;
+  spaceHistory: (pageId:string,offset?:number) => Promise<import('../../shared/space').SpaceVersionInfo[]>;
+  readSpaceVersion: (pageId:string,id:string) => Promise<import('../../shared/space').SpaceVersion>;
+  editSpacePage: (snapshot:import('../../shared/space').SpaceSnapshot,prompt:string,model:string,requestId:string,signal:AbortSignal) => Promise<import('../../shared/space').SpaceSnapshot>;
+  restoreSpaceVersion: (snapshot:import('../../shared/space').SpaceSnapshot,sourceId:string,requestId:string) => Promise<import('../../shared/space').SpaceSnapshot>;
+  setSpacePermissions: (snapshot:import('../../shared/space').SpaceSnapshot,permissions:import('../../shared/space').SpacePermissions) => Promise<import('../../shared/space').SpacePage>;
+  checkSpaceAccess: (pageId:string,versionId:string,method:'tasks'|'events') => Promise<boolean>;
   searchEnabled: boolean;
   searchIndexPending: number;
   searchIndexError: string | null;
@@ -255,6 +268,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     if (requested && session.provider_refresh_token && session.access_token) setGoogleProviderSession({ userId: session.user.id, refreshToken: session.provider_refresh_token, authToken: session.access_token });
   };
   const lectures = useLectures({ ownerId: user?.id ?? null, isOffline, stateRef, setState, isCurrent: () => !!userRef.current && userRef.current.id === user?.id && offlineRef.current === isOffline && workspaceOwner.current === (isOffline ? null : user?.id) });
+  const spaces = useSpacePages({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const semanticSearch = useSemanticSearch({ownerId:user?.id??null,isOffline,getToken:getAuthToken,state,stateRef,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const focus = useFocusTimer(user?.id || null);
   const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
@@ -1043,6 +1057,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         state,
         ...lectures,
         ...semanticSearch,
+        ...spaces,
         focusSession: focus.focusSession,
         startTaskFocus: id => { const task = stateRef.current.tasks.find(t => t.id === id); if (task) focus.startFocus(task); },
         stopTaskFocus: focus.stopFocus,

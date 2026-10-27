@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createSpaceEditor } from './server/space';
 import { createSemanticSearch } from './server/search';
 import { runDanteSearch, searchPromptData, searchSourceFooter } from './server/danteSearch';
 import { createLectures } from './server/lectures';
@@ -37,6 +38,10 @@ async function startServer() {
   app.delete('/api/lectures/:id', requireUser, lectures.useJob, lectures.cancel);
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
+
+  const spaceEditor=createSpaceEditor();
+  app.get('/api/space/status',spaceEditor.status);
+  app.post('/api/space/pages/:id/edit',requireUser,rateLimit,spaceEditor.prepare,daily.count('messages'),spaceEditor.edit);
 
   const semanticSearch = createSemanticSearch();
   if(process.env.SEARCH_INDEX_WORKER!=='false')semanticSearch.startWorker(async owner => (await daily.reserve(owner,'messages')).allowed);
