@@ -336,3 +336,61 @@ BEGIN
 END; $$;
 REVOKE ALL ON FUNCTION public.save_exam_plan(uuid,jsonb,jsonb,jsonb,date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.save_exam_plan(uuid,jsonb,jsonb,jsonb,date) TO authenticated;
+
+-- Stripe billing: clients can read their own plan but cannot grant entitlements.
+CREATE TABLE IF NOT EXISTS public.profiles (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  plan text NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro')),
+  stripe_customer_id text UNIQUE,
+  stripe_subscription_id text UNIQUE,
+  current_period_end timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  stripe_event_created bigint NOT NULL DEFAULT 0,
+  stripe_event_revision bigint NOT NULL DEFAULT 0
+);
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.profiles FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.profiles TO service_role;
+DROP POLICY IF EXISTS profiles_select_own ON public.profiles;
+CREATE POLICY profiles_select_own ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = user_id);
+
+CREATE TABLE IF NOT EXISTS public.stripe_billing_events (
+  event_id text PRIMARY KEY,
+  customer_id text NOT NULL,
+  created bigint NOT NULL,
+  processed_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.stripe_billing_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.stripe_billing_events FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT ON public.stripe_billing_events TO service_role;
+
+-- Receipt and plan change commit together; row locking serializes concurrent deliveries.
+CREATE OR REPLACE FUNCTION public.apply_stripe_billing_event(
+  p_event_id text, p_created bigint, p_customer text,
+  p_subscription text, p_period_end timestamptz, p_plan text, p_expected_revision bigint
+) RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path = public AS $$
+DECLARE owner_id uuid; previous_created bigint; previous_revision bigint;
+BEGIN
+  IF p_plan NOT IN ('free', 'pro') OR p_created < 0 OR p_event_id IS NULL THEN
+    RAISE EXCEPTION 'Invalid billing event';
+  END IF;
+  SELECT user_id, stripe_event_created, stripe_event_revision INTO owner_id, previous_created, previous_revision
+    FROM public.profiles WHERE stripe_customer_id = p_customer FOR UPDATE;
+  IF owner_id IS NULL THEN RETURN; END IF;
+  IF EXISTS (SELECT 1 FROM public.stripe_billing_events WHERE event_id = p_event_id) THEN RETURN; END IF;
+  -- Stripe was read outside this transaction. A competing delivery must retry and
+  -- reread canonical Stripe state instead of overwriting it with an older snapshot.
+  IF previous_revision IS DISTINCT FROM p_expected_revision THEN
+    RAISE EXCEPTION 'Concurrent billing update; retry';
+  END IF;
+  INSERT INTO public.stripe_billing_events(event_id, customer_id, created)
+    VALUES (p_event_id, p_customer, p_created) ON CONFLICT DO NOTHING;
+  IF NOT FOUND OR p_created < previous_created THEN RETURN; END IF;
+  UPDATE public.profiles SET plan = p_plan, stripe_subscription_id = p_subscription,
+    current_period_end = p_period_end, updated_at = now(), stripe_event_created = p_created, stripe_event_revision = stripe_event_revision + 1
+    WHERE user_id = owner_id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.apply_stripe_billing_event(text,bigint,text,text,timestamptz,text,bigint) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.apply_stripe_billing_event(text,bigint,text,text,timestamptz,text,bigint) TO service_role;

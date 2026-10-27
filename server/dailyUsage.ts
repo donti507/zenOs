@@ -19,7 +19,7 @@ function summary(row: { date: string; messages: number; transcriptions: number }
 }
 
 /** Injectable client factory lets tests exercise HTTP enforcement without credentials. */
-export function createDailyUsage(options: { key?: string; url?: string; limit?: string; client?: () => SupabaseClient } = {}) {
+export function createDailyUsage(options: { key?: string; url?: string; limit?: string; client?: () => SupabaseClient; isPro?: (userId: string) => Promise<boolean> } = {}) {
   const limit = dailyLimit(options.limit);
   let client: SupabaseClient | undefined;
   const getClient = () => client ??= options.client ? options.client() : createClient(options.url || '', options.key!, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -30,6 +30,7 @@ export function createDailyUsage(options: { key?: string; url?: string; limit?: 
     const userId: string | undefined = (req as any).userId;
     if (!enabled(userId)) return next();
     try {
+      if (await options.isPro?.(userId!)) return next();
       const { data, error } = await getClient().rpc('consume_dante_usage', { p_user_id: userId, p_kind: kind, p_limit: limit });
       if (error) throw error;
       const row = data?.[0];
@@ -52,6 +53,7 @@ export function createDailyUsage(options: { key?: string; url?: string; limit?: 
     const userId: string | undefined = (req as any).userId;
     if (!enabled(userId)) return res.json({ enabled: false });
     try {
+      if (await options.isPro?.(userId!)) return res.json({ enabled: false });
       const { date } = usageDay();
       const { data, error } = await getClient().from('dante_usage').select('date,messages,transcriptions').eq('user_id', userId).eq('date', date).maybeSingle();
       if (error) throw error;

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { beforeAll, beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
-const ctx = vi.hoisted(() => ({ user: null as { id: string } | null, isLoadingData: false, setShowBriefing: vi.fn(), passwordRecovery: false, setPasswordRecovery: vi.fn(), state: { theme: 'light' }, toggleTheme: vi.fn() }));
+const ctx = vi.hoisted(() => ({ user: null as { id: string } | null, isLoadingData: false, setShowBriefing: vi.fn(), passwordRecovery: false, setPasswordRecovery: vi.fn(), billing: null as { enabled: boolean; plan: 'free' | 'pro' } | null, state: { theme: 'light' }, toggleTheme: vi.fn() }));
 vi.mock('../context/ZenosContext', () => ({ useZenos: () => ctx, ZenosProvider: ({ children }: any) => children }));
 vi.mock('../pages/Login', () => ({ default: ({ initialView }: any) => <h1>{initialView === 'reset-password' ? 'Reset password' : 'Existing Login'}</h1> }));
 vi.mock('../pages/Home', () => ({ default: () => <h1>Workspace Home</h1> }));
@@ -19,7 +19,7 @@ let root: Root;
 function Back() { const navigate = useNavigate(); return <button onClick={() => navigate(-1)}>Browser back</button>; }
 beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
-  ctx.user = null; ctx.passwordRecovery = false; ctx.isLoadingData = false;
+  ctx.billing = null; ctx.user = null; ctx.passwordRecovery = false; ctx.isLoadingData = false;
   vi.clearAllMocks();
   host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
 });
@@ -74,4 +74,13 @@ it('uses the shared theme toggle', async () => {
   await render();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Switch to dark mode"]')!.click());
   expect(ctx.toggleTheme).toHaveBeenCalledOnce();
+});
+
+it('offers Pro only when enabled and sends signed-out visitors through login', async () => {
+  ctx.billing = { enabled: true, plan: 'free' };
+  await render();
+  expect(link('Upgrade to Pro').getAttribute('href')).toBe('/billing/upgrade');
+  expect(host.textContent).not.toContain('Coming soon');
+  await act(async () => link('Upgrade to Pro').click());
+  expect(host.querySelector('h1')?.textContent).toBe('Existing Login');
 });

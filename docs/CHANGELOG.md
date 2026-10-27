@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added optional server-only Stripe subscriptions, authenticated Checkout/portal, signed raw webhooks with atomic retry-safe plan updates, read-only own-profile RLS, server-verified Pro daily-quota bypass, responsive account/pricing/return UI, setup documentation and API/SQL/UI regression tests; disabled billing preserves local mode. Apply the updated SQL migration before enabling. (Codex)
+
 - 2026-10-27: Added an Exam planner to Tasks/Calendar with reviewed, meeting-aware study scheduling, an Exams category, durable topic/checklist tracking, atomic cloud/local saves and overdue re-planning that preserves completed work; added scheduling, SQL, local persistence and modal tests, and bounded icon slots to prevent mobile overflow while fonts load. Apply the updated SQL migration. (Codex)
 
 - 2026-10-27: Added Snap a syllabus on Home/Calendar, authenticated rate-limited vision extraction with a 5 MB image cap, lazy single-page PDF rendering, editable opt-in review and task/exam/meeting creation, with regression coverage. (Codex)

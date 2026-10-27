@@ -3,7 +3,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import DanteUsageNotice from '../DanteUsageNotice';
-const ctx = vi.hoisted(() => ({ danteUsage: null as any, danteUsageError: null as string | null }));
+const ctx = vi.hoisted(() => ({ billing: null as { plan: 'free' | 'pro' } | null, danteUsage: null as any, danteUsageError: null as string | null }));
 vi.mock('../../context/ZenosContext', () => ({ useZenos: () => ctx }));
 it('shows the actual allowance, including exhaustion and custom limits, without inventing disabled/error allowances', async () => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -17,6 +17,9 @@ it('shows the actual allowance, including exhaustion and custom limits, without 
     expect(host.querySelector('[role="status"]')).not.toBeNull();
     ctx.danteUsage = { enabled: false };
     await render(); expect(host.textContent).not.toContain('messages left');
+    ctx.billing = { plan: 'pro' };
+    await render(); expect(host.textContent).toContain('Pro · No daily Dante limit');
+    expect(host.textContent).toContain('Per-minute limits still apply');
     ctx.danteUsageError = 'Usage unavailable';
     await render(); expect(host.textContent).toContain('Usage unavailable');
   } finally { await act(async () => root.unmount()); }

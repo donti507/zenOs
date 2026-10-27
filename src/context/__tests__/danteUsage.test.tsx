@@ -46,7 +46,8 @@ it('fetches private usage through the context and refreshes after chat/voice sig
 });
 it('refreshes across midnight UTC', async () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-26T23:59:59Z'));
-  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => usage(0) }).mockResolvedValue({ ok: true, json: async () => usage(20, '2026-10-27', '2026-10-28T00:00:00Z') });
+  let usageCalls = 0;
+  fetchMock.mockImplementation(async (path: string) => ({ ok: true, json: async () => path.startsWith('/api/billing/') ? { enabled: false } : ++usageCalls === 1 ? usage(0) : usage(20, '2026-10-27', '2026-10-28T00:00:00Z') }));
   await mount();
   expect(ctx.danteUsage).toMatchObject({ messagesRemaining: 0 });
   await act(async () => vi.advanceTimersByTimeAsync(1200));

@@ -172,6 +172,9 @@ interface ZenosContextType {
   danteUsage: DanteUsage | null;
   danteUsageError: string | null;
   refreshDanteUsage: () => Promise<DanteUsage | null>;
+  billing: { enabled: boolean; plan: 'free' | 'pro'; hasCustomer?: boolean } | null;
+  refreshBilling: () => Promise<void>;
+  startBilling: (action: 'checkout' | 'portal') => Promise<void>;
   liveOpen: boolean;
   setLiveOpen: (open: boolean) => void;
   passwordRecovery: boolean;
@@ -498,6 +501,49 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     const { data } = await supabase.auth.getSession();
     return data?.session?.access_token ?? null;
   }, []);
+
+  const [billingState, setBillingState] = useState<{ owner: string | null; enabled: boolean; plan: 'free' | 'pro'; hasCustomer?: boolean } | null>(null);
+  const billingRequest = useRef(0);
+  const billingPlan = useRef<{ owner: string | null; plan: 'free' | 'pro' }>({ owner: null, plan: 'free' });
+  const refreshBilling = useCallback(async () => {
+    const owner = userRef.current?.id ?? null;
+    const request = ++billingRequest.current;
+    try {
+      const token = owner && !offlineRef.current ? await getAuthToken() : null;
+      if (owner && !offlineRef.current && !token) throw new Error('Missing session');
+      const response = await fetch(token ? '/api/billing/account' : '/api/billing/status', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}, cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('Billing unavailable');
+      const data = await response.json();
+      if (request !== billingRequest.current || (userRef.current?.id ?? null) !== owner) return;
+      const plan = data.plan === 'pro' ? 'pro' : 'free';
+      const previous = billingPlan.current;
+      billingPlan.current = { owner, plan };
+      setBillingState({ owner, enabled: data.enabled === true, plan, hasCustomer: data.hasCustomer === true });
+      if (owner && !offlineRef.current && (previous.owner === owner ? previous.plan !== plan : plan === 'pro')) window.dispatchEvent(new Event(DANTE_USAGE_CHANGED));
+    } catch {
+      if (request === billingRequest.current && (userRef.current?.id ?? null) === owner) setBillingState(null);
+    }
+  }, [getAuthToken]);
+  useEffect(() => {
+    void refreshBilling();
+    window.addEventListener('focus', refreshBilling);
+    return () => { ++billingRequest.current; window.removeEventListener('focus', refreshBilling); };
+  }, [user?.id, refreshBilling]);
+  const startBilling = useCallback(async (action: 'checkout' | 'portal') => {
+    const owner = userRef.current?.id;
+    if (!owner || offlineRef.current) throw new Error('Sign in to manage billing.');
+    const token = await getAuthToken();
+    if (!token || userRef.current?.id !== owner) throw new Error('Sign in again.');
+    const response = await fetch(`/api/billing/${action}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) throw new Error('Could not open billing. Please try again.');
+    const data = await response.json();
+    const destination = new URL(data.url);
+    if (destination.protocol !== 'https:' || !['checkout.stripe.com', 'billing.stripe.com'].includes(destination.hostname)) throw new Error('Invalid billing destination.');
+    if (userRef.current?.id !== owner || offlineRef.current) return;
+    window.location.assign(destination.href);
+  }, [getAuthToken]);
 
   const refreshDanteUsage = useCallback(async (): Promise<DanteUsage | null> => {
     const userId = userRef.current?.id || null;
@@ -877,6 +923,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         danteUsage: usageState.userId === user?.id ? usageState.data : null,
         danteUsageError: usageState.userId === user?.id ? usageState.error : null,
         refreshDanteUsage,
+        billing: billingState?.owner === (user?.id ?? null) ? billingState : null,
+        refreshBilling,
+        startBilling,
         liveOpen,
         setLiveOpen,
         passwordRecovery,

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { BILLING_ROUTES } from '../lib/routes';
 import { Link } from 'react-router-dom';
 import DanteOrb from '../components/DanteOrb';
 import { btn, card } from '../components/ui/kit';
@@ -22,7 +23,7 @@ const FAQ = [
   { q: 'What can Dante help me with?', a: 'Dante can help you plan, create and update tasks, schedule meetings and navigate your workspace by text or voice. AI features need a connected provider, and answers can be wrong, so check important details.' },
   { q: 'Can I connect Google Calendar?', a: 'Yes. Google Calendar is optional. Connect it from your workspace to see events alongside your plans and create meetings.' },
   { q: 'What happens to my data?', a: 'Local demo data stays in your browser. With an account, your workspace syncs through Supabase. When you use Dante, relevant context is sent to the configured AI provider. Read our Privacy Policy for details.' },
-  { q: 'When will Pro be available?', a: 'Pro is coming soon at €5 per month, with unlimited Dante messages and priority access. There is no checkout or subscription charge yet.' },
+  { q: 'How does Pro work?', a: 'When subscriptions are available, choose Upgrade to Pro and review the current price at Stripe checkout. Pro removes the daily Dante message and transcription limit; per-minute limits still apply. Manage or cancel from your account menu.' },
 ];
 
 function Glyph({ path, className = '' }: { path: string; className?: string }) {
@@ -30,7 +31,7 @@ function Glyph({ path, className = '' }: { path: string; className?: string }) {
 }
 
 export default function Landing() {
-  const { state, toggleTheme } = useZenos();
+  const { state, toggleTheme, billing } = useZenos();
   useEffect(() => { document.title = 'ZEN OS · Your day, organised by AI'; }, []);
   const start = `${btn.solid} min-h-11 !px-5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary`;
   return <div className="landing min-h-dvh bg-surface text-on-surface overflow-x-clip">
@@ -73,10 +74,10 @@ export default function Landing() {
 
       <section id="how-it-works" aria-labelledby="steps-title" className="scroll-mt-8 max-w-6xl mx-auto px-6 sm:px-8 py-20 md:py-24"><p className="text-primary text-xs font-semibold tracking-widest uppercase mb-3">How it works</p><h2 id="steps-title" className="text-3xl sm:text-4xl tracking-tight font-semibold">A fresh start, in three small steps.</h2><ol className="grid md:grid-cols-3 gap-8 md:gap-12 mt-12">{STEPS.map((step, index) => <li key={step.title}><span className="text-5xl font-light tracking-tight text-primary/50" aria-hidden="true">0{index + 1}</span><h3 className="font-semibold text-lg mt-5">{step.title}</h3><p className="text-on-surface-variant text-sm leading-7 mt-2">{step.text}</p></li>)}</ol></section>
 
-      <section id="pricing" aria-labelledby="pricing-title" className="scroll-mt-8 bg-surface-container-low py-20 md:py-24"><div className="max-w-4xl mx-auto px-6 sm:px-8"><div className="text-center"><p className="text-primary text-xs font-semibold tracking-widest uppercase mb-3">Simple pricing</p><h2 id="pricing-title" className="text-3xl sm:text-4xl tracking-tight font-semibold">Room to start. Space to grow.</h2><p className="mt-4 text-on-surface-variant">Build your rhythm for free. Go further when Pro arrives.</p></div>
+      <section id="pricing" aria-labelledby="pricing-title" className="scroll-mt-8 bg-surface-container-low py-20 md:py-24"><div className="max-w-4xl mx-auto px-6 sm:px-8"><div className="text-center"><p className="text-primary text-xs font-semibold tracking-widest uppercase mb-3">Simple pricing</p><h2 id="pricing-title" className="text-3xl sm:text-4xl tracking-tight font-semibold">Room to start. Space to grow.</h2><p className="mt-4 text-on-surface-variant">Build your rhythm for free. Go further with Pro.</p></div>
         <div className="grid sm:grid-cols-2 gap-5 mt-10">
           <article className={`${card} p-7 border border-outline-variant flex flex-col`}><h3 className="text-xl font-semibold">Free</h3><p className="text-sm text-on-surface-variant mt-2">A little help, every day.</p><p className="mt-6 mb-7"><span className="text-5xl font-semibold tracking-tight">€0</span><span className="text-on-surface-variant"> / month</span></p><ul className="space-y-3 text-sm mb-8"><li>✓ 20 Dante messages/day</li><li>✓ Tasks, Board and Calendar</li><li>✓ Meetings and Analytics</li></ul><Link to="/login" className={`${start} mt-auto`}>Get started</Link></article>
-          <article className={`${card} p-7 border-2 border-primary/40 flex flex-col`}><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-semibold">Pro</h3><span className="bg-primary/10 text-primary text-xs font-semibold px-2.5 py-1 rounded-full">On the horizon</span></div><p className="text-sm text-on-surface-variant mt-2">For your bigger days and ideas.</p><p className="mt-6 mb-7"><span className="text-5xl font-semibold tracking-tight">€5</span><span className="text-on-surface-variant"> / month</span></p><ul className="space-y-3 text-sm mb-8"><li>✓ Everything in Free</li><li>✓ Unlimited Dante messages</li><li>✓ Priority access</li></ul><button type="button" disabled className={`${btn.secondary} min-h-11 mt-auto`}>Coming soon</button></article>
+          <article className={`${card} p-7 border-2 border-primary/40 flex flex-col`}><div className="flex items-center justify-between gap-3"><h3 className="text-xl font-semibold">Pro</h3><span className="bg-primary/10 text-primary text-xs font-semibold px-2.5 py-1 rounded-full">{billing?.enabled ? 'Available now' : 'On the horizon'}</span></div><p className="text-sm text-on-surface-variant mt-2">For your bigger days and ideas.</p><p className="mt-6 mb-7"><span className="text-5xl font-semibold tracking-tight">€5</span><span className="text-on-surface-variant"> / month</span></p><ul className="space-y-3 text-sm mb-8"><li>✓ Everything in Free</li><li>✓ Unlimited Dante messages</li><li>✓ Manage or cancel your subscription</li></ul>{billing?.enabled ? <Link to={BILLING_ROUTES.upgrade} className={`${btn.solid} min-h-11 mt-auto`}>Upgrade to Pro</Link> : <button type="button" disabled className={`${btn.secondary} min-h-11 mt-auto`}>Coming soon</button>}</article>
         </div>
       </div></section>
 

@@ -20,7 +20,8 @@
     "@supabase/supabase-js": "^2.106.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "stripe": "^23.0.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.12",
