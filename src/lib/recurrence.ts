@@ -29,7 +29,7 @@ export function nextOccurrence(task: Task, id: string, fallback = today()): Task
       reminder = `${localDateStr(old)}T${String(old.getHours()).padStart(2, '0')}:${String(old.getMinutes()).padStart(2, '0')}`;
     }
   }
-  return { ...task, id, postponedCount: 0, date: localDateStr(next), recurrence: rule, recurrenceDay: anchor, recurrenceSourceId: String(task.id), status: 'todo', progress: 0, completedAt: null, reminder, steps: (task.steps || []).map(step => ({ ...step, done: false })) };
+  return { ...task, examPlan: undefined, id, postponedCount: 0, date: localDateStr(next), recurrence: rule, recurrenceDay: anchor, recurrenceSourceId: String(task.id), status: 'todo', progress: 0, completedAt: null, reminder, steps: (task.steps || []).map(step => ({ ...step, done: false })) };
 }
 
 /** Local-mode equivalent of the database completion trigger. */

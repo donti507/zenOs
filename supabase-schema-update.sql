@@ -135,11 +135,11 @@ BEGIN
     IF item->>'id' IS NOT NULL THEN task_map := task_map || pg_catalog.jsonb_build_object(item->>'id', gen_random_uuid()::text); END IF;
   END LOOP;
   FOR item IN SELECT value FROM pg_catalog.jsonb_array_elements(payload->'tasks') LOOP
-    INSERT INTO public.tasks(id, user_id, title, cat, status, date, reminder, note, progress, steps, completed_at, recurrence, recurrence_day, recurrence_source_id, postponed_count)
+    INSERT INTO public.tasks(id, user_id, title, cat, status, date, reminder, note, progress, steps, completed_at, recurrence, recurrence_day, recurrence_source_id, postponed_count, exam_plan)
     VALUES (COALESCE((task_map->>(item->>'id'))::uuid, gen_random_uuid()), uid, item->>'title', COALESCE(category_map->>(item->>'cat'), item->>'cat', 'other'),
       COALESCE(item->>'status', 'todo'), item->>'date', item->>'reminder', item->>'note',
       COALESCE((item->>'progress')::integer, 0), COALESCE(item->'steps', '[]'::jsonb), (item->>'completedAt')::timestamptz,
-      COALESCE(item->>'recurrence', 'none'), (item->>'recurrenceDay')::smallint, (task_map->>(item->>'recurrenceSourceId'))::uuid, COALESCE((item->>'postponedCount')::integer, 0));
+      COALESCE(item->>'recurrence', 'none'), (item->>'recurrenceDay')::smallint, (task_map->>(item->>'recurrenceSourceId'))::uuid, COALESCE((item->>'postponedCount')::integer, 0), NULLIF(item->'examPlan', 'null'::jsonb));
   END LOOP;
   FOR item IN SELECT value FROM pg_catalog.jsonb_array_elements(payload->'meetings') LOOP
     INSERT INTO public.meetings(user_id, person_name, date, time, subject, status, elapsed_seconds, notes, google_event_id, created_at)
@@ -277,3 +277,62 @@ $$;
 DROP TRIGGER IF EXISTS tasks_track_postponement ON public.tasks;
 CREATE TRIGGER tasks_track_postponement BEFORE UPDATE ON public.tasks
   FOR EACH ROW EXECUTE FUNCTION public.track_task_postponement();
+
+-- 11. Durable exam plans; save all sessions atomically under the caller's RLS.
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS exam_plan jsonb;
+CREATE OR REPLACE FUNCTION public.save_exam_plan(p_owner uuid, p_draft jsonb, p_sessions jsonb, p_expected jsonb DEFAULT NULL, p_start_date date DEFAULT CURRENT_DATE)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path = public AS $$
+DECLARE
+  cat_row categories%ROWTYPE;
+  item jsonb;
+  current_snapshot jsonb;
+  plan_id text := p_draft->>'id';
+  budget integer := (p_draft->>'minutesPerDay')::integer;
+  metadata jsonb;
+BEGIN
+  IF auth.uid() IS NULL OR auth.uid() <> p_owner THEN RAISE EXCEPTION 'Account changed'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtext(p_owner::text || ':exam-plans'));
+  IF p_start_date IS NULL OR budget IS NULL OR p_draft->>'examDate' IS NULL OR p_sessions IS NULL OR plan_id IS NULL OR length(plan_id) > 100 OR nullif(trim(p_draft->>'name'),'') IS NULL
+     OR length(p_draft->>'name') > 160 OR budget < 1 OR budget > 1440
+     OR jsonb_typeof(p_sessions) <> 'array' OR jsonb_array_length(p_sessions) NOT BETWEEN 1 AND 100
+     OR p_start_date NOT BETWEEN CURRENT_DATE - 1 AND CURRENT_DATE + 1
+     OR (p_draft->>'examDate')::date <= p_start_date THEN RAISE EXCEPTION 'Invalid exam plan'; END IF;
+  PERFORM 1 FROM tasks WHERE user_id = p_owner AND exam_plan->>'id' = plan_id FOR UPDATE;
+  IF p_expected IS NOT NULL THEN
+    SELECT coalesce(jsonb_agg(jsonb_build_object('id',id::text,'date',date,'status',status,'steps',coalesce(steps,'[]'::jsonb),'exam_plan',exam_plan) ORDER BY id::text),'[]'::jsonb)
+      INTO current_snapshot FROM tasks
+      WHERE user_id = p_owner AND exam_plan->>'id' = plan_id AND status <> 'done'
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(steps,'[]'::jsonb)) step WHERE step->>'id' = exam_plan->>'topicId' AND step->>'done' = 'true');
+    IF current_snapshot <> p_expected THEN RAISE EXCEPTION 'Plan changed. Refresh and try again.'; END IF;
+    IF jsonb_array_length(p_expected) <> jsonb_array_length(p_sessions) THEN RAISE EXCEPTION 'Topic mismatch'; END IF;
+  END IF;
+  SELECT * INTO cat_row FROM categories WHERE user_id = p_owner AND lower(trim(label)) = 'exams' ORDER BY id LIMIT 1;
+  IF cat_row.id IS NULL THEN
+    INSERT INTO categories(user_id,label,color,slug) VALUES(p_owner,'Exams','#8151eb','exams') RETURNING * INTO cat_row;
+  END IF;
+  IF p_expected IS NULL AND EXISTS(SELECT 1 FROM tasks WHERE user_id = p_owner AND exam_plan->>'id' = plan_id) THEN
+    RETURN jsonb_build_object('category',to_jsonb(cat_row),'tasks',(SELECT jsonb_agg(to_jsonb(t)) FROM tasks t WHERE user_id = p_owner AND exam_plan->>'id' = plan_id));
+  END IF;
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_sessions) x GROUP BY x->>'topicId' HAVING count(*) > 1)
+    OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_sessions) x GROUP BY x->>'date' HAVING sum((x->>'minutes')::integer) > budget)
+    THEN RAISE EXCEPTION 'Invalid study capacity'; END IF;
+  FOR item IN SELECT * FROM jsonb_array_elements(p_sessions) LOOP
+    IF item->>'date' IS NULL OR item->>'minutes' IS NULL OR nullif(trim(item->>'topic'),'') IS NULL OR length(item->>'topic') > 200 OR nullif(item->>'topicId','') IS NULL
+      OR (item->>'date')::date < p_start_date OR (item->>'date')::date >= (p_draft->>'examDate')::date
+      OR (item->>'minutes')::integer <> least(25,budget) THEN RAISE EXCEPTION 'Invalid session'; END IF;
+    metadata := jsonb_build_object('id',plan_id,'name',trim(p_draft->>'name'),'examDate',p_draft->>'examDate','minutesPerDay',budget,'topicId',item->>'topicId');
+    IF p_expected IS NULL THEN
+      INSERT INTO tasks(user_id,title,cat,status,date,reminder,note,progress,steps,exam_plan)
+        VALUES(p_owner,trim(p_draft->>'name') || ': ' || trim(item->>'topic'),cat_row.id,'todo',item->>'date','','Study session: ' || (item->>'minutes') || ' minutes',0,
+          jsonb_build_array(jsonb_build_object('id',item->>'topicId','label',trim(item->>'topic'),'done',false)),metadata);
+    ELSE
+      UPDATE tasks SET date = item->>'date', exam_plan = metadata
+        WHERE user_id = p_owner AND exam_plan->>'id' = plan_id AND exam_plan->>'topicId' = item->>'topicId'
+        AND id::text IN (SELECT x->>'id' FROM jsonb_array_elements(p_expected) x);
+      IF NOT FOUND THEN RAISE EXCEPTION 'Topic changed'; END IF;
+    END IF;
+  END LOOP;
+  RETURN jsonb_build_object('category',to_jsonb(cat_row),'tasks',(SELECT jsonb_agg(to_jsonb(t)) FROM tasks t WHERE user_id = p_owner AND exam_plan->>'id' = plan_id));
+END; $$;
+REVOKE ALL ON FUNCTION public.save_exam_plan(uuid,jsonb,jsonb,jsonb,date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.save_exam_plan(uuid,jsonb,jsonb,jsonb,date) TO authenticated;

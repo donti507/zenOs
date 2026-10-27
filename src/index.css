@@ -320,3 +320,16 @@ body {
   .landing-feature { transition: transform .2s ease, box-shadow .2s ease; }
   .landing-feature:hover { transform: translateY(-4px); box-shadow: var(--z-shadow); }
 }
+
+/* Keep icon ligatures from widening mobile controls while the webfont loads. */
+@layer base {
+  .material-symbols-outlined {
+    display: inline-block;
+    width: 1em;
+    box-sizing: content-box;
+    overflow: hidden;
+    white-space: nowrap;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+}
