@@ -7,6 +7,7 @@ import { AppRoutes } from '../App';
 const ctx = vi.hoisted(() => ({ user: null as { id: string } | null, isLoadingData: false, setShowBriefing: vi.fn(), passwordRecovery: false, setPasswordRecovery: vi.fn(), billing: null as { enabled: boolean; plan: 'free' | 'pro' } | null, state: { theme: 'light' }, toggleTheme: vi.fn() }));
 vi.mock('../context/ZenosContext', () => ({ useZenos: () => ctx, ZenosProvider: ({ children }: any) => children }));
 vi.mock('../pages/Login', () => ({ default: ({ initialView }: any) => <h1>{initialView === 'reset-password' ? 'Reset password' : 'Existing Login'}</h1> }));
+vi.mock('../pages/Challenges', () => ({ default: () => <h1>Public challenges</h1> }));
 vi.mock('../pages/Gallery', () => ({ default: () => <h1>Public gallery</h1> }));
 vi.mock('../pages/Home', () => ({ default: () => <h1>Workspace Home</h1> }));
 vi.mock('../components/layout/AppShell', async () => {
@@ -92,3 +93,8 @@ it.each(['/gallery','/gallery/10000000-0000-0000-0000-000000000001'])('opens pub
 it('keeps password recovery ahead of public gallery routes',async()=>{
  ctx.passwordRecovery=true;await render('/gallery');expect(host.querySelector('h1')?.textContent).toBe('Reset password');
 });
+
+it.each(['/gallery/challenges','/gallery/challenges/10000000-0000-0000-0000-000000000001'])('opens challenges without login at %s',async path=>{
+ await render(path);expect(host.querySelector('h1')?.textContent).toBe('Public challenges');
+});
+it('keeps password recovery ahead of challenges',async()=>{ctx.passwordRecovery=true;await render('/gallery/challenges');expect(host.querySelector('h1')?.textContent).toBe('Reset password');});

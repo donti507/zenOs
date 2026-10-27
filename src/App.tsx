@@ -17,6 +17,7 @@ const Tasks = lazy(() => import('./pages/Tasks'));
 const Kanban = lazy(() => import('./pages/Board'));
 const Calendar = lazy(() => import('./pages/Calendar'));
 const Meetings = lazy(() => import('./pages/Meetings'));
+const Challenges = lazy(() => import('./pages/Challenges'));
 const Gallery = lazy(() => import('./pages/Gallery'));
 const Space = lazy(() => import('./pages/Space'));
 const Search = lazy(() => import('./pages/Search'));
@@ -43,6 +44,7 @@ export function AppRoutes() {
   if (pathname === '/privacy' || pathname === '/terms') return <Legal page={pathname === '/privacy' ? 'privacy' : 'terms'} />;
 
   if (passwordRecovery) return <Suspense fallback={<PageLoader />}><Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} /></Suspense>;
+  if (pathname === '/gallery/challenges' || pathname.startsWith('/gallery/challenges/')) return <Suspense fallback={<PageLoader />}><div key={`${user?.id||'public'}:${isOffline}:${pathname}`}><Challenges /></div></Suspense>;
   if (pathname === '/gallery' || pathname.startsWith('/gallery/')) return <Suspense fallback={<PageLoader />}><div key={`${user?.id||'public'}:${isOffline}:${pathname}:${routeSearch}`}><Gallery /></div></Suspense>;
   if (!user && pathname === '/') return <Suspense fallback={<PageLoader />}><Landing /></Suspense>;
   if (!user) return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
