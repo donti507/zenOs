@@ -192,3 +192,25 @@ it("retains an AI draft after a storage failure and retries saving without anoth
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(await api.spaceHistory(initial.page.id)).toHaveLength(2);
 });
+
+it("persists pin, resize, order and unpin locally without changing versions or grants",async()=>{
+ let first:any,second:any;
+ await act(async()=>{first=await api.createSpacePage('One','one');second=await api.createSpacePage('Two','two');});
+ await act(async()=>{await api.setSpacePermissions(first,{tasks:true,events:false});});
+ await act(async()=>{await api.changeSpaceWidget(first.page.id,'small');await api.changeSpaceWidget(second.page.id,'medium');await api.changeSpaceWidget(second.page.id,'earlier');});
+ const order=()=>[...api.spacePages].sort((a,b)=>(a.dashboardOrder??0)-(b.dashboardOrder??0)).map(page=>page.id);
+ expect(order()).toEqual([second.page.id,first.page.id]);
+ await act(async()=>{await api.changeSpaceWidget(first.page.id,'medium');await api.refreshSpacePages();});
+ expect(order()).toEqual([second.page.id,first.page.id]);
+ expect(api.spacePages.find(page=>page.id===first.page.id)?.dashboardSize).toBe('medium');
+ let loaded:any;await act(async()=>{loaded=await api.loadSpacePage('one');});
+ expect(loaded.version.id).toBe(first.version.id);
+ expect(loaded.page.permissions.tasks).toBe(true);
+ expect(await api.spaceHistory(first.page.id)).toHaveLength(1);
+ await expect(api.changeSpaceWidget(first.page.id,'large' as any)).rejects.toThrow('Invalid widget');
+ await act(async()=>{await api.changeSpaceWidget(first.page.id,'unpin');await api.refreshSpacePages();});
+ expect(api.spacePages.find(page=>page.id===first.page.id)?.dashboardSize).toBeNull();
+ const stale=api.changeSpaceWidget;
+ await act(async()=>root.render(<Harness owner="other"/>));
+ await expect(stale(second.page.id,'unpin')).rejects.toThrow('account changed');
+});

@@ -48,3 +48,9 @@ A small, self-contained bootstrap executes before generated markup/code, removes
 ## Verification
 
 Run `npm run typecheck`, `npm test`, `npm run build`. SQL tests cover privacy, atomic/idempotent saves, stale branches, append-only restore, permission resets and account cascades. Client tests cover inert sanitization, data allowlists, local history/restore, failed-save retries and account guards. Chromium checks use real sandboxed iframes, CSP and MessageChannels to verify parent/cookie/storage/network denial, removal of the bootstrap capability, rejection of forged requests, explicit grants/revocation, navigation invalidation and 390px dark/light layout. AI responses in browser tests are fixtures; live provider/auth delivery needs configured deployment credentials.
+
+## Home dashboard widgets
+
+Open a page, expand **Page menu**, and choose **Pin to Home**. Home shows its current saved version using the same `SpaceFrame` sandbox and CSP as the editor. Choose **Small** (256px high, one desktop column) or **Medium** (384px high, two desktop columns). Both fit one column on mobile. **Earlier** / **Later** reorder only your pinned cards; **Unpin** is available on Home and in the page menu.
+
+Apply the latest full `supabase-schema-update.sql` before deployment. It adds `dashboard_size` and `dashboard_order` to `space_pages`, and the authenticated, owner-bound `change_space_widget` RPC. No new environment variables are needed. Preferences sync through Supabase and refresh on window focus; local mode persists them transactionally in IndexedDB. Pinning, resizing and ordering do not create code versions or grant data access. Each widget still checks current saved permission on every bridge read; edits/restores revoke grants as before. Unpinning removes the frame and closes its bridge session. Reordering starts fresh preview sessions so moving an iframe cannot retain a stale navigation/bridge session.

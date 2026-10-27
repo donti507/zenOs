@@ -102,6 +102,7 @@ interface ZenosContextType {
   stopTaskFocus: () => void;
   state: ZenosState;
   spacePages: import('../../shared/space').SpacePage[];
+  changeSpaceWidget: (id:string, action:import('../../shared/space').SpaceWidgetAction) => Promise<void>;
   spacePagesLoading: boolean;
   spacePagesError: string | null;
   refreshSpacePages: () => Promise<void>;

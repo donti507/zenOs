@@ -879,3 +879,31 @@ RETURNS boolean LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
 $$;
 REVOKE ALL ON FUNCTION public.space_bridge_permission(uuid,uuid,text) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.space_bridge_permission(uuid,uuid,text) TO authenticated;
+
+-- Private Home widget preferences; code and grants are unchanged by layout edits.
+ALTER TABLE public.space_pages ADD COLUMN IF NOT EXISTS dashboard_size text DEFAULT NULL CHECK (dashboard_size IN ('small','medium'));
+ALTER TABLE public.space_pages ADD COLUMN IF NOT EXISTS dashboard_order integer NOT NULL DEFAULT 0 CHECK (dashboard_order >= 0);
+CREATE OR REPLACE FUNCTION public.change_space_widget(p_page_id uuid,p_action text)
+RETURNS SETOF public.space_pages LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE owner_id uuid:=auth.uid(); target public.space_pages%ROWTYPE; ids uuid[]; idx integer; other integer; temp uuid;
+BEGIN
+  IF owner_id IS NULL OR p_action IS NULL OR p_action NOT IN ('small','medium','unpin','earlier','later') THEN RAISE EXCEPTION 'Invalid widget request'; END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(owner_id::text, 42));
+  SELECT * INTO target FROM public.space_pages WHERE id=p_page_id AND user_id=owner_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Page not found'; END IF;
+  SELECT coalesce(array_agg(id ORDER BY dashboard_order,id),ARRAY[]::uuid[]) INTO ids FROM public.space_pages WHERE user_id=owner_id AND dashboard_size IS NOT NULL;
+  idx:=array_position(ids,p_page_id);
+  IF p_action IN ('earlier','later') THEN
+    IF idx IS NULL THEN RAISE EXCEPTION 'Page is not pinned'; END IF;
+    other:=idx+CASE WHEN p_action='earlier' THEN -1 ELSE 1 END;
+    IF other>=1 AND other<=cardinality(ids) THEN temp:=ids[idx];ids[idx]:=ids[other];ids[other]:=temp; END IF;
+  ELSE
+    IF p_action<>'unpin' AND idx IS NULL THEN ids:=array_append(ids,p_page_id); END IF;
+    UPDATE public.space_pages SET dashboard_size=CASE WHEN p_action='unpin' THEN NULL ELSE p_action END WHERE id=p_page_id AND user_id=owner_id;
+  END IF;
+  UPDATE public.space_pages p SET dashboard_order=(n.ordinality-1)::integer FROM unnest(ids) WITH ORDINALITY n(id,ordinality) WHERE p.id=n.id AND p.user_id=owner_id;
+  RETURN QUERY SELECT * FROM public.space_pages WHERE user_id=owner_id ORDER BY created_at,id;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.change_space_widget(uuid,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.change_space_widget(uuid,text) TO authenticated;

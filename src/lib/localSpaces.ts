@@ -1,4 +1,5 @@
 import {
+  arrangeSpaceWidgets,
   initialSpaceCode,
   noSpacePermissions,
   spacePageFromRow,
@@ -268,4 +269,25 @@ export async function createLocalSpace(
   } finally {
     db.close();
   }
+}
+
+export async function changeLocalSpaceWidget(id: string, action: import('../../shared/space').SpaceWidgetAction) {
+  const db = await open();
+  try {
+    return await new Promise<SpacePage[]>((resolve,reject) => {
+      const tx = db.transaction('pages','readwrite');
+      const store = tx.objectStore('pages');
+      const request = store.getAll();
+      let pages: SpacePage[];
+      let failure: unknown;
+      request.onsuccess = () => {
+        try {
+          pages = arrangeSpaceWidgets(request.result.map(spacePageFromRow),id,action);
+          pages.forEach(page => store.put(page));
+        } catch(error) { failure=error; tx.abort(); }
+      };
+      tx.oncomplete = () => resolve(pages);
+      tx.onabort = tx.onerror = () => reject(failure || new Error('Could not save dashboard layout.'));
+    });
+  } finally { db.close(); }
 }

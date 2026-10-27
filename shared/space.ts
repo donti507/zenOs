@@ -11,6 +11,8 @@ export type SpacePage = {
   id: string;
   slug: string;
   title: string;
+  dashboardSize?: "small" | "medium" | null;
+  dashboardOrder?: number;
   currentVersionId: string;
   permissions: SpacePermissions;
   createdAt: string;
@@ -90,6 +92,8 @@ export function spacePageFromRow(value: any): SpacePage {
     id,
     slug: spaceSlug(value.slug),
     title: spaceText(value.title, 80, "page title"),
+    dashboardSize: ["small", "medium"].includes(value.dashboard_size ?? value.dashboardSize) ? (value.dashboard_size ?? value.dashboardSize) : null,
+    dashboardOrder: Number.isSafeInteger(value.dashboard_order ?? value.dashboardOrder) ? (value.dashboard_order ?? value.dashboardOrder) : 0,
     currentVersionId: version,
     permissions: spacePermissions(value.permissions),
     createdAt: created,
@@ -141,3 +145,21 @@ export const initialSpaceCode: SpaceCode = {
   css: "main { max-width: 60rem; margin: auto; padding: 2rem; }",
   js: "",
 };
+
+export type SpaceWidgetAction = "small" | "medium" | "unpin" | "earlier" | "later";
+export function arrangeSpaceWidgets(pages: SpacePage[], id: string, action: SpaceWidgetAction): SpacePage[] {
+  if (!["small", "medium", "unpin", "earlier", "later"].includes(action)) throw new Error("Invalid widget action.");
+  const target = pages.find(page => page.id === id);
+  if (!target) throw new Error("Page not found.");
+  const pinned = pages.filter(page => page.dashboardSize).sort((a,b) => (a.dashboardOrder ?? 0)-(b.dashboardOrder ?? 0) || a.id.localeCompare(b.id));
+  if (action === "earlier" || action === "later") {
+    const index = pinned.findIndex(page => page.id === id);
+    if (index < 0) throw new Error("Page is not pinned.");
+    const next = index + (action === "earlier" ? -1 : 1);
+    if (next >= 0 && next < pinned.length) [pinned[index],pinned[next]] = [pinned[next],pinned[index]];
+  } else if (action !== "unpin" && !target.dashboardSize) pinned.push(target);
+  return pages.map(page => ({...page,
+    dashboardSize: page.id === id ? action === "unpin" ? null : action === "small" || action === "medium" ? action : page.dashboardSize : page.dashboardSize,
+    dashboardOrder: Math.max(0,pinned.findIndex(item => item.id === page.id)),
+  }));
+}
