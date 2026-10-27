@@ -9,7 +9,7 @@ beforeAll(async () => {
     CREATE TABLE auth.users(id uuid PRIMARY KEY); INSERT INTO auth.users VALUES ('${a}');
     GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role,anon;`);
   const all = readFileSync('supabase-schema-update.sql', 'utf8');
-  const migration = all.slice(all.indexOf('-- Google provider refresh tokens'));
+  const migration = all.slice(all.indexOf('-- Google provider refresh tokens'), all.indexOf('-- Per-user private Realtime'));
   await db.exec(migration); await db.exec(migration);
 }, 20000);
 afterAll(() => db.close());

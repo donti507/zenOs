@@ -77,3 +77,5 @@ The Supabase URL and anon key are injected at runtime, so the same image works i
 | `npm run build` | build client to `dist/` and bundle the server to `dist/server.cjs` |
 | `npm start` | run the production build |
 | `npm run typecheck` | TypeScript check |
+
+Lecture recording, transcription and study-guide setup: [docs/LECTURES.md](docs/LECTURES.md). Requires FFmpeg/ffprobe on the server and the latest SQL migration.

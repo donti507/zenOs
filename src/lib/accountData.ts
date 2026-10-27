@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const ACCOUNT_TABLES = ['tasks', 'categories', 'meetings', 'vault_items', 'dante_messages', 'dante_memory'] as const;
+export const ACCOUNT_TABLES = ['tasks', 'categories', 'meetings', 'vault_items', 'dante_messages', 'dante_memory', 'lectures'] as const;
 
 /** Read fresh, complete data rather than the UI's truncated chat history. */
 export async function exportAccountData(client: SupabaseClient, userId: string) {

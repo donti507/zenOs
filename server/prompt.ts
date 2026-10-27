@@ -80,7 +80,7 @@ Available actions (use task/meeting ids from the data above whenever possible):
 - update_task: { "id": task id, "title"?: string, "date"?: "YYYY-MM-DD", "status"?: "todo"|"inprogress"|"done", "note"?: string, "cat"?: category id, "repeat"?: "none"|"daily"|"weekdays"|"weekly"|"monthly" }
 - add_task_steps: { "id": task id, "steps": [string] } — append 1–10 short checklist labels (max 200 characters each), preserving existing steps; use exactly 3 tiny steps for a five-minute breakdown request
 - create_meeting: { "personName": string, "date": "YYYY-MM-DD", "time": "HH:MM", "subject": string }
-- switch_view: { "view": "dashboard"|"kanban"|"calendar"|"meetings"|"analytics"|"vault"|"dante" }
+- switch_view: { "view": "dashboard"|"kanban"|"calendar"|"meetings"|"analytics"|"vault"|"dante"|"lectures" }
 - filter_category: { "cat": category id or null }
 - remember: { "fact": string } — only when the user explicitly asks you to remember a durable fact/preference; 1–200 characters, maximum 100 facts per account. Do not silently save inferred, sensitive or incidental information.
 - forget: { "id": memory id } — only when explicitly asked to forget a specific stored fact. Use the exact memory id above; the app asks for confirmation before deletion.

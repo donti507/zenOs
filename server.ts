@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createLectures } from './server/lectures';
 import { createDanteMemoryReader } from './server/memory';
 import { createGoogleTokens } from './server/google';
 import { createBilling } from './server/billing';
@@ -27,6 +28,11 @@ async function startServer() {
   const daily = createDailyUsage({ isPro: billing.isPro, key: process.env.SUPABASE_SERVICE_ROLE_KEY, url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, limit: process.env.DANTE_DAILY_LIMIT });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+  const lectures = createLectures();
+  app.post('/api/lectures/prepare', requireUser, rateLimit, lectures.prepare);
+  app.post('/api/lectures/:id/transcribe/:index', requireUser, lectures.useJob, lectures.cachedChunk, rateLimit, daily.count('transcriptions'), lectures.chunk);
+  app.post('/api/lectures/:id/analyze', requireUser, lectures.useJob, lectures.cachedResult, rateLimit, daily.count('messages'), lectures.analyze);
+  app.delete('/api/lectures/:id', requireUser, lectures.useJob, lectures.cancel);
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
 
