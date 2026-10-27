@@ -911,3 +911,63 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.change_space_widget(uuid,text) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.change_space_widget(uuid,text) TO authenticated;
+
+-- Reserve two Arena messages atomically; no partial debit when only one remains.
+CREATE OR REPLACE FUNCTION public.consume_dante_usage_amount(p_user_id uuid,p_kind text,p_limit integer,p_amount integer)
+RETURNS TABLE(allowed boolean,date date,messages integer,transcriptions integer)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE usage_date date:=(now() AT TIME ZONE 'UTC')::date; usage_row public.dante_usage%ROWTYPE;
+BEGIN
+  IF p_kind IS NULL OR p_kind NOT IN ('messages','transcriptions') OR p_limit IS NULL OR p_limit<1 OR p_amount IS NULL OR p_amount NOT IN (1,2) THEN RAISE EXCEPTION 'Invalid usage reservation'; END IF;
+  INSERT INTO public.dante_usage(user_id,date) VALUES(p_user_id,usage_date) ON CONFLICT ON CONSTRAINT dante_usage_pkey DO NOTHING;
+  SELECT u.* INTO STRICT usage_row FROM public.dante_usage u WHERE u.user_id=p_user_id AND u.date=usage_date FOR UPDATE;
+  IF (p_kind='messages' AND usage_row.messages>p_limit-p_amount) OR (p_kind='transcriptions' AND usage_row.transcriptions>p_limit-p_amount) THEN
+    RETURN QUERY SELECT false,usage_row.date,usage_row.messages,usage_row.transcriptions; RETURN;
+  END IF;
+  UPDATE public.dante_usage u SET messages=u.messages+CASE WHEN p_kind='messages' THEN p_amount ELSE 0 END,
+    transcriptions=u.transcriptions+CASE WHEN p_kind='transcriptions' THEN p_amount ELSE 0 END
+    WHERE u.user_id=p_user_id AND u.date=usage_date RETURNING u.* INTO usage_row;
+  RETURN QUERY SELECT true,usage_row.date,usage_row.messages,usage_row.transcriptions;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.consume_dante_usage_amount(uuid,text,integer,integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_dante_usage_amount(uuid,text,integer,integer) TO service_role;
+
+CREATE TABLE IF NOT EXISTS public.space_arena_rounds (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  model_a text NOT NULL CHECK (char_length(model_a) BETWEEN 1 AND 120),
+  model_b text NOT NULL CHECK (char_length(model_b) BETWEEN 1 AND 120 AND model_b<>model_a),
+  completed boolean NOT NULL DEFAULT false,
+  winner text CHECK (winner IS NULL OR (winner IN ('a','b') AND completed)),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS space_arena_owner_idx ON public.space_arena_rounds(user_id);
+ALTER TABLE public.space_arena_rounds ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.space_arena_rounds FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON public.space_arena_rounds TO authenticated;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.space_arena_rounds TO service_role;
+DROP POLICY IF EXISTS space_arena_own ON public.space_arena_rounds;
+CREATE POLICY space_arena_own ON public.space_arena_rounds FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+CREATE OR REPLACE FUNCTION public.vote_space_arena(p_id uuid,p_winner text)
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE saved public.space_arena_rounds%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL OR p_winner IS NULL OR p_winner NOT IN ('a','b') THEN RAISE EXCEPTION 'Invalid vote'; END IF;
+  SELECT * INTO saved FROM public.space_arena_rounds WHERE id=p_id AND user_id=auth.uid() FOR UPDATE;
+  IF NOT FOUND OR NOT saved.completed THEN RAISE EXCEPTION 'Completed comparison not found'; END IF;
+  IF saved.winner IS NOT NULL AND saved.winner<>p_winner THEN RAISE EXCEPTION 'Vote already recorded'; END IF;
+  UPDATE public.space_arena_rounds SET winner=p_winner WHERE id=saved.id AND user_id=auth.uid();
+  RETURN p_winner;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.vote_space_arena(uuid,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.vote_space_arena(uuid,text) TO authenticated;
+CREATE OR REPLACE FUNCTION public.space_arena_leaderboard()
+RETURNS TABLE(model text,wins bigint,comparisons bigint) LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+  SELECT candidate.model,count(*) FILTER(WHERE r.winner=candidate.side),count(*)
+  FROM public.space_arena_rounds r CROSS JOIN LATERAL (VALUES(r.model_a,'a'),(r.model_b,'b')) candidate(model,side)
+  WHERE r.user_id=auth.uid() AND r.completed AND r.winner IS NOT NULL GROUP BY candidate.model ORDER BY 2 DESC,1;
+$$;
+REVOKE ALL ON FUNCTION public.space_arena_leaderboard() FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.space_arena_leaderboard() TO authenticated;

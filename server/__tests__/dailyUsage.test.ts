@@ -76,3 +76,9 @@ it('fails closed when server plan verification fails', async () => {
   await createDailyUsage({ key: 'service', isPro: async () => { throw new Error('storage unavailable'); } }).count('messages')({ userId } as any, res, next);
   expect(next).not.toHaveBeenCalled(); expect(res.status).toHaveBeenCalledWith(503);
 });
+it('charges Arena as two messages in one reservation, ignoring client costs and preserving Pro exemption',async()=>{
+ const rpc=vi.fn().mockResolvedValue({data:[{...row,messages:2}],error:null}),next=vi.fn();
+ await createDailyUsage({key:'service',client:()=>client(rpc)}).count('messages',2)({userId,body:{cost:1}} as any,response(),next);
+ expect(rpc).toHaveBeenCalledExactlyOnceWith('consume_dante_usage_amount',{p_user_id:userId,p_kind:'messages',p_limit:20,p_amount:2});expect(next).toHaveBeenCalledOnce();
+ rpc.mockClear();await createDailyUsage({key:'service',client:()=>client(rpc),isPro:async()=>true}).count('messages',2)({userId} as any,response(),next);expect(rpc).not.toHaveBeenCalled();
+});
