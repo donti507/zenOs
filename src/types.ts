@@ -8,7 +8,8 @@ export interface Task {
   reminder: string;
   note: string;
   progress: number;
-  steps?: { label: string; done: boolean }[];
+  steps?: { id?: string; label: string; done: boolean }[];
+  examPlan?: import('./lib/examPlanner').ExamPlan;
   completedAt?: string | null;
   postponedCount?: number;
   recurrence?: Recurrence;

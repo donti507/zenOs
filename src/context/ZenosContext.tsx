@@ -1,3 +1,5 @@
+import { planExam, remainingExamTasks, examSnapshot, type ExamDraft } from '../lib/examPlanner';
+import { applyPostponement } from '../lib/postponement';
 import { useFocusTimer, type FocusSession } from '../hooks/useFocusTimer';
 import { useTaskNotifications } from '../hooks/useTaskNotifications';
 import { isRecurrence, calendarDate, updateTaskOccurrence } from '../lib/recurrence';
@@ -66,6 +68,7 @@ const newId = () =>
 
 // ---------- row mappers (DB snake_case -> app camelCase) ----------
 const mapTask = (t: any): Task => ({
+  examPlan: t.exam_plan || undefined,
   id: t.id,
   title: t.title,
   cat: t.cat || 'other',
@@ -125,6 +128,7 @@ interface ZenosContextType {
   toggleTheme: () => void;
   toggleTaskDone: (id: number | string) => Promise<void>;
   deleteTask: (id: number | string) => Promise<void>;
+  saveExamPlan: (draft: ExamDraft, expected?: Task[]) => Promise<void>;
   addTask: (task: Omit<Task, 'id'>) => Promise<Task | null>;
   editTask: (id: number | string, updates: Partial<Task>) => Promise<void>;
   addCategory: (label: string, color: string) => Promise<void>;
@@ -541,6 +545,36 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const toggleTheme = () => setState(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
 
   // ---------- Tasks ----------
+  const saveExamPlan = async (draft: ExamDraft, expected?: Task[]) => {
+    const owner = userRef.current?.id;
+    if (!owner) throw new Error('Sign in to save a plan.');
+    const current = stateRef.current;
+    const linked = new Set((current.meetings || []).map(m => m.googleEventId).filter(Boolean));
+    const dates = [...(current.meetings || []).map(m => m.date), ...googleEvents.filter((e: any) => !linked.has(e.id)).map((e: any) => (e.start?.date || e.start?.dateTime || '').slice(0, 10))];
+    const sessions = planExam(draft, today(), dates);
+    if (expected && JSON.stringify(expected.map(t => t.examPlan?.topicId).sort()) !== JSON.stringify(draft.topics.map(t => t.id).sort())) throw new Error('Remaining topics changed. Close the planner and try again.');
+    if (expected && JSON.stringify(examSnapshot(remainingExamTasks(current.tasks, draft.id))) !== JSON.stringify(examSnapshot(expected))) throw new Error('Plan changed. Close the planner and try again.');
+    if (offlineRef.current) {
+      setState(s => {
+        if (userRef.current?.id !== owner) return s;
+        if (expected && JSON.stringify(examSnapshot(remainingExamTasks(s.tasks, draft.id))) !== JSON.stringify(examSnapshot(expected))) return s;
+        if (!expected && s.tasks.some(t => t.examPlan?.id === draft.id)) return s;
+        const category = s.categories.find(c => c.label.trim().toLowerCase() === 'exams') || { id: newId(), label: 'Exams', color: '#8151eb' };
+        const makeMetadata = (topicId: string) => ({ id: draft.id, name: draft.name.trim(), examDate: draft.examDate, minutesPerDay: draft.minutesPerDay, topicId });
+        const tasks = expected ? s.tasks.map(t => {
+          const session = sessions.find(x => t.examPlan?.id === draft.id && x.topicId === t.examPlan.topicId);
+          return session && expected.some(e => e.id === t.id) ? applyPostponement(t, { date: session.date, examPlan: makeMetadata(session.topicId) }) : t;
+        }) : [...s.tasks, ...sessions.map(x => ({ id: newId(), title: `${draft.name.trim()}: ${x.topic}`, cat: category.id, status: 'todo' as const, date: x.date, reminder: '', note: `${x.minutes}-minute study session`, progress: 0, steps: [{ id: x.topicId, label: x.topic, done: false }], examPlan: makeMetadata(x.topicId) }))];
+        return { ...s, tasks, categories: s.categories.some(c => c.id === category.id) ? s.categories : [...s.categories, category] };
+      });
+      return;
+    }
+    const { data, error } = await supabase.rpc('save_exam_plan', { p_start_date: today(), p_owner: owner, p_draft: draft, p_sessions: sessions, p_expected: expected ? examSnapshot(expected) : null });
+    if (error) throw new Error('Could not save the plan. Refresh and try again; apply the latest database migration if needed.');
+    if (userRef.current?.id !== owner) return;
+    setState(s => ({ ...s, tasks: [...s.tasks.filter(t => t.examPlan?.id !== draft.id), ...data.tasks.map(mapTask)], categories: s.categories.some(c => c.id === data.category.id) ? s.categories : [...s.categories, data.category] }));
+  };
+
   const addTask = async (taskData: Omit<Task, 'id'>): Promise<Task | null> => {
     if (!userRef.current) return null;
     const ownerId = userRef.current.id;
@@ -802,6 +836,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         toggleTheme,
         toggleTaskDone,
         deleteTask,
+        saveExamPlan,
         addTask,
         editTask,
         addCategory,

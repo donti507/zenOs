@@ -1,3 +1,4 @@
+import ExamPlanner from '../components/ExamPlanner';
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useZenos } from '../context/ZenosContext';
@@ -44,7 +45,7 @@ export default function Tasks() {
       <PageHeader
         title={activeCat ? activeCat.label : 'All tasks'}
         subtitle={`${total} ${show === 'done' ? 'completed' : show === 'open' ? 'open' : ''} task${total === 1 ? '' : 's'}`}
-        actions={<button className={btn.primary} onClick={() => setShowModal('addTask')}><Icon name="add" className="text-[18px]" />New task</button>}
+        actions={<><ExamPlanner /><button className={btn.primary} onClick={() => setShowModal('addTask')}><Icon name="add" className="text-[18px]" />New task</button></>}
       />
 
       <div className="flex flex-col md:flex-row md:items-center gap-3 mb-6">
