@@ -8,6 +8,7 @@ const NAV = [
   { to: '/', label: 'Home', icon: 'home' },
   { to: '/board', label: 'Board', icon: 'view_kanban' },
   { to: '/calendar', label: 'Calendar', icon: 'calendar_today' },
+  { to: '/search', label: 'Search', icon: 'search' },
   { to: '/lectures', label: 'Lectures', icon: 'school' },
   { to: '/meetings', label: 'Meetings', icon: 'videocam' },
   { to: '/analytics', label: 'Analytics', icon: 'monitoring' },

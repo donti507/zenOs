@@ -26,18 +26,20 @@ export function createDailyUsage(options: { key?: string; url?: string; limit?: 
   const enabled = (userId: string | undefined) => !!options.key?.trim() && !!userId && !userId.startsWith('anon:');
   const unavailable = 'We couldn’t check today’s Dante usage. Please try again shortly.';
 
+  // Shared atomic reservation for authenticated HTTP calls and indexing workers.
+  const reserve = async (userId: string | undefined, kind: Kind) => {
+    if (!enabled(userId) || await options.isPro?.(userId!)) return { allowed: true, usage: null };
+    const { data, error } = await getClient().rpc('consume_dante_usage', { p_user_id: userId, p_kind: kind, p_limit: limit });
+    if (error) throw error;
+    const row = data?.[0];
+    if (!row || typeof row.allowed !== 'boolean') throw new Error('Invalid daily usage response');
+    return { allowed: row.allowed, usage: summary({ date: row.date, messages: row.messages, transcriptions: row.transcriptions }, limit) };
+  };
   const count = (kind: Kind): RequestHandler => async (req, res, next) => {
-    const userId: string | undefined = (req as any).userId;
-    if (!enabled(userId)) return next();
     try {
-      if (await options.isPro?.(userId!)) return next();
-      const { data, error } = await getClient().rpc('consume_dante_usage', { p_user_id: userId, p_kind: kind, p_limit: limit });
-      if (error) throw error;
-      const row = data?.[0];
-      if (!row || typeof row.allowed !== 'boolean') throw new Error('Invalid daily usage response');
-      const usage = summary({ date: row.date, messages: row.messages, transcriptions: row.transcriptions }, limit);
-      res.setHeader('Cache-Control', 'no-store');
-      if (!row.allowed) {
+      const {allowed,usage} = await reserve((req as any).userId, kind);
+      if (usage) res.setHeader('Cache-Control', 'no-store');
+      if (!allowed && usage) {
         const seconds = Math.max(1, Math.ceil((new Date(usage.resetsAt).getTime() - Date.now()) / 1000));
         res.setHeader('Retry-After', seconds);
         return res.status(429).json({ error: `You’ve used your ${limit} Dante ${kind === 'messages' ? 'messages' : 'transcriptions'} for today. Take a breather and come back after midnight UTC.`, usage });
@@ -63,5 +65,5 @@ export function createDailyUsage(options: { key?: string; url?: string; limit?: 
       res.status(503).json({ error: unavailable });
     }
   };
-  return { count, read };
+  return { count, read, reserve };
 }

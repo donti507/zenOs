@@ -33,7 +33,7 @@ const VOICE_LANGS = [
   { code: "fr-FR", label: "Français" },
   { code: "uk-UA", label: "Українська" },
 ];
-const VIEWS = ["dashboard", "kanban", "calendar", "meetings", "analytics", "vault", "dante", "lectures"];
+const VIEWS = ["dashboard", "kanban", "calendar", "meetings", "analytics", "vault", "dante", "lectures", "search"];
 const HISTORY_TO_SEND = 12;
 
 type Status = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean; stt?: boolean };
@@ -150,7 +150,7 @@ export default function DanteAI() {
       const token = await getAuthToken();
       full = await streamDante({
         messages,
-        context: buildDanteContext(stateRef.current, googleEvents, userName, voiceLang),
+        context: buildDanteContext(stateRef.current, googleEvents, userName, voiceLang, 'chat', isOffline),
         token,
         signal: controller.signal,
         onText: t => {

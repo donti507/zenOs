@@ -19,6 +19,7 @@ const DanteLive = lazy(() => import('../DanteLive'));
 const MOBILE_TABS = [
   { to: '/', icon: 'home', label: 'Home' },
   { to: '/board', icon: 'view_kanban', label: 'Board' },
+  { to: '/search', icon: 'search', label: 'Search' },
   { to: '/calendar', icon: 'calendar_today', label: 'Calendar' },
   { to: '/lectures', icon: 'school', label: 'Lectures' },
   { to: '/meetings', icon: 'videocam', label: 'Meetings' },
@@ -135,11 +136,11 @@ export default function AppShell() {
             key={t.to}
             to={t.to}
             end={t.to === '/'}
-            className={({ isActive }) => `flex flex-col items-center gap-0.5 flex-1 py-1 transition-colors ${isActive ? 'text-primary' : 'text-on-surface-variant'}`}
+            className={({ isActive }) => `flex flex-col items-center gap-0.5 flex-1 min-w-0 py-1 transition-colors ${isActive ? 'text-primary' : 'text-on-surface-variant'}`}
           >
             {({ isActive }) => (
               <>
-                <span className={`material-symbols-outlined text-[22px] px-4 py-0.5 rounded-full ${isActive ? 'bg-primary/10' : ''}`} style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>{t.icon}</span>
+                <span className={`material-symbols-outlined text-[22px] px-3 py-0.5 rounded-full ${isActive ? 'bg-primary/10' : ''}`} style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>{t.icon}</span>
                 <span className="text-[11px] font-medium">{t.label}</span>
               </>
             )}

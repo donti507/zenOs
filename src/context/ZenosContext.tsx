@@ -1,3 +1,4 @@
+import { useSemanticSearch } from '../hooks/useSemanticSearch';
 import { useLectures } from '../hooks/useLectures';
 import { MEMORY_LIMIT, memoryFromRow, recentMemory, validateMemoryFact, type DanteMemory } from '../../shared/danteMemory';
 import { useDanteMemoryConfirmation } from '../components/DanteMemoryConfirmation';
@@ -99,6 +100,12 @@ interface ZenosContextType {
   startTaskFocus: (taskId: Task['id']) => void;
   stopTaskFocus: () => void;
   state: ZenosState;
+  searchEnabled: boolean;
+  searchIndexPending: number;
+  searchIndexError: string | null;
+  indexNotes: (signal?:AbortSignal) => Promise<{indexed:number;pending:number}>;
+  searchNotes: (query:string,signal?:AbortSignal) => Promise<import('../../shared/search').SearchResponse>;
+  getSearchSource: (type:import('../../shared/search').SearchType,id:string,signal?:AbortSignal) => Promise<import('../../shared/search').SearchSource>;
   lecturesLoading: boolean;
   lecturesError: string | null;
   refreshLectures: () => Promise<void>;
@@ -248,6 +255,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     if (requested && session.provider_refresh_token && session.access_token) setGoogleProviderSession({ userId: session.user.id, refreshToken: session.provider_refresh_token, authToken: session.access_token });
   };
   const lectures = useLectures({ ownerId: user?.id ?? null, isOffline, stateRef, setState, isCurrent: () => !!userRef.current && userRef.current.id === user?.id && offlineRef.current === isOffline && workspaceOwner.current === (isOffline ? null : user?.id) });
+  const semanticSearch = useSemanticSearch({ownerId:user?.id??null,isOffline,getToken:getAuthToken,state,stateRef,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const focus = useFocusTimer(user?.id || null);
   const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
 
@@ -1034,6 +1042,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       value={{
         state,
         ...lectures,
+        ...semanticSearch,
         focusSession: focus.focusSession,
         startTaskFocus: id => { const task = stateRef.current.tasks.find(t => t.id === id); if (task) focus.startFocus(task); },
         stopTaskFocus: focus.stopFocus,

@@ -38,7 +38,7 @@ src/components/layout/    AppShell (sidebar, header, mobile nav, RouteSync), Sid
 src/components/ui/kit.tsx Design-system primitives: card, btn.*, input, Modal, Field, PageHeader, EmptyState, Segmented, CategoryChip, Icon
 src/components/DanteLive.tsx   Full-screen voice assistant
 src/components/views/DanteAI.tsx  Dante chat page
-src/pages/*.tsx           Home, Tasks, Board, Calendar, Meetings, Analytics, Vault, Lectures, Login
+src/pages/*.tsx           Home, Tasks, Board, Calendar, Meetings, Analytics, Vault, Lectures, Search, Login
 supabase-schema*.sql      DB schema + idempotent migration (run both)
 ```
 
@@ -61,7 +61,7 @@ Client sends `{messages, context}` to `POST /api/dante` → server builds the sy
 Supported: `create_task, complete_task, reopen_task, update_task, add_task_steps, create_meeting, switch_view, filter_category, remember, forget`. `context.mode = "voice"` makes replies short and speakable.
 
 ## Environment (.env)
-`LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET`. See `.env.example`.
+`LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, EMBEDDING_MODEL, SEARCH_INDEX_WORKER`. See `.env.example`.
 
 ## Known gaps / next work
 See `docs/ROADMAP.md`. Persistent Google Calendar access is documented in docs/GOOGLE_CALENDAR.md. Optional Stripe subscriptions are documented in docs/BILLING.md.
@@ -150,3 +150,12 @@ On channel join/rejoin, reconcile only the four workspace tables and replay broa
 `server/lectures.ts` mounts authenticated binary preparation/transcription/NDJSON analysis routes before express.json. FFmpeg/ffprobe are runtime and audio-test requirements (installed explicitly in Docker and GitHub CI); `lectureAudio.ts` streams a bounded temporary upload, checks decoded duration and creates independently valid four-minute WAV chunks strictly under 10 MB. Never slice compressed bytes into transcription requests. Transcription reuses `transcribeAudio` from `server/stt.ts`; `lectureAnalysis.ts` condenses long transcripts in bounded stages and validates exactly ten cards. Model output cannot set review state or task IDs. Quotas charge uncached sections/analysis attempts; cached retries skip reservations. Temporary owner-bound jobs expire, cancel on disconnect/navigation and require single-instance/sticky routing. Do not log lecture content. See docs/LECTURES.md.
 
 Apply the migration for validated lectures and RLS-respecting atomic card-review/task RPCs. Cloud action/task linking is transactional and retry-safe; local tasks use deterministic IDs before updating IndexedDB to survive partial storage failure. Review/save mutations never overwrite another card's progress, and initial-save retries preserve existing notes. Client callbacks ignore account changes. Use shared/lectures.ts validation for provider and database reads.
+
+## Semantic note search
+`src/pages/Search.tsx` is a lazy primary route with design-system source previews and citations. ZenosContext owns `useSemanticSearch` methods and account/mode guards. Cloud saved-content changes debounce indexing; local mode uses labelled, network-free text search through `src/lib/search.ts`. Mobile Search joins the existing bottom tabs with compact icon padding so all seven destinations fit at 390px.
+
+Apply the migration to enable pgvector and the own-user, read-only `embeddings` index. Source triggers transactionally maintain 2,000-character overlapping chunks of task/meeting notes, vault metadata and lecture summaries (not files/audio/transcripts); edits invalidate vectors, deletes remove rows, and revision-checked service-only saves reject stale work. Qwen's documented 0.6B dimension is 1024; `server/embeddings.ts` enforces it for every response. Do not trust body owners/content/vectors, mix model spaces or expose service credentials. Source reads/ranking use the verified JWT and RLS. Derived vectors are not exported; original sources are.
+
+`server/search.ts` owns quota-metered HTTP search/indexing and a durable-queue worker (`server/searchWorker.ts`). The worker shares `daily.reserve` with HTTP quota middleware, batches at most 16 sections, backs off on failure and defers exhausted accounts until UTC reset. Run one background indexer per database (`SEARCH_INDEX_WORKER=false` on other replicas); per-process locking is not a distributed lease. SQL tests use @electric-sql/pglite-pgvector; ordinary test databases without vector skip that optional section explicitly.
+
+`server/danteSearch.ts` exposes the read-only `search_notes` tool via a bounded server planner before the answer. Authenticated tool data is always loaded from owned rows, ignoring client sources. A turn's existing daily reservation covers tool work; no unmetered embedding/LLM endpoint is added. Inject evidence as bounded JSON data, require [S1] citations and honest missing/incomplete-evidence responses, and append server-generated source links. Mark cloud retrieval turns read-only over SSE and strip action JSON before displaying/saving/executing it in chat/Live. Never execute retrieval through client write actions. Markdown allows safe internal source links via React Router. See docs/SEARCH.md for model configuration, privacy and migration/reindex details.

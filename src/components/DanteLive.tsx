@@ -65,7 +65,7 @@ const VOICE_LANGS = [
 
 export default function DanteLive() {
   const {
-    liveOpen, setLiveOpen, stateRef, user, googleEvents, getAuthToken, saveDanteMessage,
+    liveOpen, setLiveOpen, stateRef, user, isOffline, googleEvents, getAuthToken, saveDanteMessage,
     addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
   } = useZenos();
   const reduce = useReducedMotion();
@@ -189,7 +189,7 @@ export default function DanteLive() {
       const name = user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
       full = await streamDante({
         messages: history,
-        context: buildDanteContext(stateRef.current, googleEvents, name, lang, 'voice'),
+        context: buildDanteContext(stateRef.current, googleEvents, name, lang, 'voice', isOffline),
         token,
         signal: controller.signal,
         onText: t => { full = t; setReply(visibleText(t)); speakReady(false); },

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useReducedMotion } from 'motion/react';
 import { MAX_LECTURE_BYTES, type Lecture, type LectureProgress } from '../../shared/lectures';
 import { useZenos } from '../context/ZenosContext';
@@ -10,6 +11,7 @@ import LectureStudy from '../components/LectureStudy';
 export default function Lectures(){
  const {state,user,isOffline,getAuthToken,lecturesLoading,lecturesError,refreshLectures,loadLecture,saveLecture}=useZenos();
  const reduced=useReducedMotion();const resultArea=useRef<HTMLDivElement>(null);const [discard,setDiscard]=useState(false);
+ const [params]=useSearchParams();
  const status=useDanteStatus();const [file,setFile]=useState<File|null>(null);const [title,setTitle]=useState('');const [language,setLanguage]=useState('');
  const [busy,setBusy]=useState(false);const [progress,setProgress]=useState<LectureProgress|null>(null);const [error,setError]=useState('');const [selected,setSelected]=useState('');const [draft,setDraft]=useState<Lecture|null>(null);
  const session=useRef<LectureSession>({});const controller=useRef<AbortController|null>(null);const running=useRef(false);const upload=useRef<HTMLInputElement>(null);
@@ -24,6 +26,7 @@ export default function Lectures(){
  useEffect(()=>{if(!file){setAudioUrl('');return;}const url=URL.createObjectURL(file);setAudioUrl(url);return()=>URL.revokeObjectURL(url);},[file]);
  useEffect(()=>{setFile(null);setDraft(null);setSelected('');setError('');setProgress(null);setBusy(false);return()=>{controller.current?.abort();controller.current=null;running.current=false;const old=session.current;session.current={};void disposeLectureSession(old);};},[user?.id,isOffline]);
  useEffect(()=>{if(selected||draft)resultArea.current?.scrollIntoView?.({behavior:reduced?'auto':'smooth',block:'start'});},[selected,draft?.id,reduced]);
+ useEffect(()=>{const id=params.get('id');if(id&&/^[\w:-]{1,80}$/.test(id))setSelected(id);},[params,user?.id,isOffline]);
  const lecture=draft||(state.lectures||[]).find(row=>row.id===selected);
  useEffect(()=>{if(!selected||draft)return;let active=true;setError('');void loadLecture(selected).catch(()=>{if(active)setError('Could not open this lecture. Please select it again.');});return()=>{active=false;};},[selected,loadLecture]);
  const cancel=()=>{controller.current?.abort();controller.current=null;running.current=false;setBusy(false);setProgress(null);setError('');const old=session.current;session.current={};void disposeLectureSession(old);};
