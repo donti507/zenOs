@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createArena } from './server/arena';
 import { createSpaceEditor } from './server/space';
 import { createSemanticSearch } from './server/search';
 import { runDanteSearch, searchPromptData, searchSourceFooter } from './server/danteSearch';
@@ -39,6 +40,9 @@ async function startServer() {
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
 
+  const arena=createArena();
+  app.get('/api/space/arena/status',arena.status);
+  app.post('/api/space/arena/compare',requireUser,rateLimit,arena.prepare,daily.count('messages',2),arena.compare);
   const spaceEditor=createSpaceEditor();
   app.get('/api/space/status',spaceEditor.status);
   app.post('/api/space/pages/:id/edit',requireUser,rateLimit,spaceEditor.prepare,daily.count('messages'),spaceEditor.edit);

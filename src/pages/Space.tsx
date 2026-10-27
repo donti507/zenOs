@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useZenos } from "../context/ZenosContext";
 import {
   type SpaceSnapshot,
   type SpaceVersionInfo,
   noSpacePermissions,
 } from "../../shared/space";
+import ModelArena from "../components/ModelArena";
 import SpaceLearn from "../components/SpaceLearn";
 import SpaceFrame from "../components/SpaceFrame";
 import DanteUsageNotice from "../components/DanteUsageNotice";
@@ -26,6 +27,8 @@ type Status = {
 };
 export default function Space() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
+  const arenaTab = !slug && searchParams.get("tab") === "arena";
   const navigate = useNavigate();
   const {
     user,
@@ -270,6 +273,11 @@ export default function Space() {
       const page = await setSpacePermissions(snapshot, noSpacePermissions());
       if (!signal.aborted) setSnapshot({ ...snapshot, page });
     });
+  const tabs = <nav aria-label="My Space tabs" className="flex flex-wrap gap-2">
+    <Link className={arenaTab ? btn.secondary : btn.solid} to="/space" aria-current={!arenaTab ? 'page' : undefined}>My pages</Link>
+    <Link className={arenaTab ? btn.solid : btn.secondary} to="/space?tab=arena" aria-current={arenaTab ? 'page' : undefined}>Model Arena</Link>
+  </nav>;
+  if (arenaTab) return <div className="min-w-0 space-y-5"><PageHeader title="My Space" subtitle="Compare models with your own prompts."/>{tabs}<ModelArena/></div>;
   const blocked =
     !status?.ready || !model || (status.authRequired && isOffline);
   return (
@@ -278,6 +286,7 @@ export default function Space() {
         title={snapshot?.page.title || "My Space"}
         subtitle="Private pages you build by chatting with AI."
       />
+      {tabs}
       <div className="flex flex-wrap gap-2">
         <Link className={btn.secondary} to="/space">
           All pages

@@ -27,22 +27,22 @@ export function createDailyUsage(options: { key?: string; url?: string; limit?: 
   const unavailable = 'We couldn’t check today’s Dante usage. Please try again shortly.';
 
   // Shared atomic reservation for authenticated HTTP calls and indexing workers.
-  const reserve = async (userId: string | undefined, kind: Kind) => {
+  const reserve = async (userId: string | undefined, kind: Kind, amount: 1 | 2 = 1) => {
     if (!enabled(userId) || await options.isPro?.(userId!)) return { allowed: true, usage: null };
-    const { data, error } = await getClient().rpc('consume_dante_usage', { p_user_id: userId, p_kind: kind, p_limit: limit });
+    const { data, error } = await getClient().rpc(amount === 1 ? 'consume_dante_usage' : 'consume_dante_usage_amount', { p_user_id: userId, p_kind: kind, p_limit: limit, ...(amount === 2 ? {p_amount: amount} : {}) });
     if (error) throw error;
     const row = data?.[0];
     if (!row || typeof row.allowed !== 'boolean') throw new Error('Invalid daily usage response');
     return { allowed: row.allowed, usage: summary({ date: row.date, messages: row.messages, transcriptions: row.transcriptions }, limit) };
   };
-  const count = (kind: Kind): RequestHandler => async (req, res, next) => {
+  const count = (kind: Kind, amount: 1 | 2 = 1): RequestHandler => async (req, res, next) => {
     try {
-      const {allowed,usage} = await reserve((req as any).userId, kind);
+      const {allowed,usage} = await reserve((req as any).userId, kind, amount);
       if (usage) res.setHeader('Cache-Control', 'no-store');
       if (!allowed && usage) {
         const seconds = Math.max(1, Math.ceil((new Date(usage.resetsAt).getTime() - Date.now()) / 1000));
         res.setHeader('Retry-After', seconds);
-        return res.status(429).json({ error: `You’ve used your ${limit} Dante ${kind === 'messages' ? 'messages' : 'transcriptions'} for today. Take a breather and come back after midnight UTC.`, usage });
+        return res.status(429).json({ error: amount === 2 ? 'You need 2 remaining Dante messages for Model Arena. Try again after midnight UTC.' : `You’ve used your ${limit} Dante ${kind === 'messages' ? 'messages' : 'transcriptions'} for today. Take a breather and come back after midnight UTC.`, usage });
       }
       next();
     } catch (error) {

@@ -1,3 +1,4 @@
+import { useModelArena } from '../hooks/useModelArena';
 import { useSpacePages } from '../hooks/useSpacePages';
 import { useSemanticSearch } from '../hooks/useSemanticSearch';
 import { useLectures } from '../hooks/useLectures';
@@ -101,6 +102,16 @@ interface ZenosContextType {
   startTaskFocus: (taskId: Task['id']) => void;
   stopTaskFocus: () => void;
   state: ZenosState;
+  arenaRound: import('../../shared/arena').ArenaRound | null;
+  arenaRunning: boolean;
+  arenaVoting: boolean;
+  arenaError: string | null;
+  arenaBoardError: string | null;
+  arenaLeaderboard: import('../../shared/arena').ArenaLeader[];
+  compareArena: (prompt:string,models:[string,string])=>Promise<void>;
+  cancelArena: ()=>void;
+  voteArena: (winner:import('../../shared/arena').ArenaWinner)=>Promise<void>;
+  refreshArenaLeaderboard: ()=>Promise<void>;
   spacePages: import('../../shared/space').SpacePage[];
   changeSpaceWidget: (id:string, action:import('../../shared/space').SpaceWidgetAction) => Promise<void>;
   spacePagesLoading: boolean;
@@ -269,6 +280,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     if (requested && session.provider_refresh_token && session.access_token) setGoogleProviderSession({ userId: session.user.id, refreshToken: session.provider_refresh_token, authToken: session.access_token });
   };
   const lectures = useLectures({ ownerId: user?.id ?? null, isOffline, stateRef, setState, isCurrent: () => !!userRef.current && userRef.current.id === user?.id && offlineRef.current === isOffline && workspaceOwner.current === (isOffline ? null : user?.id) });
+  const arena = useModelArena({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const spaces = useSpacePages({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const semanticSearch = useSemanticSearch({ownerId:user?.id??null,isOffline,getToken:getAuthToken,state,stateRef,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const focus = useFocusTimer(user?.id || null);
@@ -1059,6 +1071,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         ...lectures,
         ...semanticSearch,
         ...spaces,
+        ...arena,
         focusSession: focus.focusSession,
         startTaskFocus: id => { const task = stateRef.current.tasks.find(t => t.id === id); if (task) focus.startFocus(task); },
         stopTaskFocus: focus.stopFocus,
