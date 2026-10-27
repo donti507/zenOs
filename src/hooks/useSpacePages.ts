@@ -45,7 +45,7 @@ export function useSpacePages(options: Options) {
       {
         prompt: string;
         model: string;
-        draft: { html: string; css: string; js: string; reply: string };
+        draft: { html: string; css: string; js: string; reply: string; explanation: string };
       }
     >(),
   );
@@ -181,7 +181,7 @@ export function useSpacePages(options: Options) {
       else {
         const { data, error } = await supabase
           .from("space_page_versions")
-          .select("id,page_id,kind,prompt,reply,model,restored_from,created_at")
+          .select("id,page_id,kind,prompt,reply,model,explanation,parent_version_id,restored_from,created_at")
           .eq("user_id", options.ownerId)
           .eq("page_id", pageId)
           .order("created_at", { ascending: false })
@@ -273,6 +273,7 @@ export function useSpacePages(options: Options) {
         draft = {
           ...spaceCode(data.draft),
           reply: spaceText(data.draft?.reply, SPACE_LIMITS.reply, "AI reply"),
+          explanation: spaceText(data.draft?.explanation, SPACE_LIMITS.explanation, "explanation"),
         };
         if (drafts.current.size >= 20)
           drafts.current.delete(drafts.current.keys().next().value!);
@@ -311,6 +312,7 @@ export function useSpacePages(options: Options) {
                 kind: "ai",
                 prompt,
                 model,
+                parentVersionId: page.currentVersionId,
                 restoredFrom: null,
                 createdAt,
               },
@@ -363,6 +365,8 @@ export function useSpacePages(options: Options) {
                     kind: "restore",
                     prompt: "",
                     reply: "Restored a saved version.",
+                    explanation: "Restored this page to a previous save point. Its code replaces the version that was open before the restore.",
+                    parentVersionId: page.currentVersionId,
                     restoredFrom: source.id,
                     createdAt,
                   },

@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added My Space Learn mode with plain-language AI explanations saved per version, exact-predecessor highlighted code comparisons, timeline review, cloud/local persistence and regression tests; apply the updated migration. (Codex)
+
 - 2026-10-27: Added My Space page-menu pin/unpin and Home sandboxed widgets with small/medium sizes, accessible ordering, private per-user cloud/local persistence and regression tests; apply the updated migration. (Codex)
 
 - 2026-10-27: Added private My Space pages with allowlisted, quota-metered AI editing, append-only cloud/local versions and restore, opaque CSP-restricted iframe previews, and explicit per-version read-only task/event grants over a capability-checked MessageChannel bridge; added SQL/API/storage/sandbox tests and security/setup documentation. Apply the latest migration. (Codex)

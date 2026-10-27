@@ -54,7 +54,7 @@ async function fixture(
       html: "<main>Private page</main>",
       css: "",
       js: "",
-      reply: "Done",
+      reply: "Done", explanation: "Added a heading so the page has a clear title.",
     }));
   const save = vi.fn(async () => snapshot);
   const storeFactory = vi.fn(
@@ -147,7 +147,7 @@ it("loads verified-owner code instead of body code and stores every completed ed
     baseId,
     "Build a page",
     "allowed",
-    expect.objectContaining({ html: "<main>Private page</main>" }),
+    expect.objectContaining({ html: "<main>Private page</main>", explanation: "Added a heading so the page has a clear title." }),
     expect.any(AbortSignal),
   );
   expect(f.charges()).toBe(1);
@@ -191,4 +191,9 @@ it("supports bounded local code with the same quota pipeline and keeps provider 
   expect(f.storeFactory).not.toHaveBeenCalled();
   expect(f.charges()).toBe(1);
   expect(f.save).not.toHaveBeenCalled();
+});
+
+it("rejects invalid explanations before saving an AI edit",async()=>{
+ const f=await fixture({generate:vi.fn(async()=>({html:'',css:'',js:'',reply:'Done',explanation:'x'.repeat(1201)}))});
+ expect((await f.call()).status).toBe(502);expect(f.save).not.toHaveBeenCalled();
 });
