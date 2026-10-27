@@ -1,3 +1,4 @@
+import {DANTE_VOICE_PREFS_KEY,loadDanteVoicePreferences,loadDanteVoiceLanguage,pickDanteVoice,type DanteVoicePreferences} from '../lib/danteVoice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { editSpaceByVoice, spaceVoiceSlug, spaceVoiceConfirmation } from '../lib/spaceVoice';
@@ -13,11 +14,9 @@ import { runDanteActions, ActionResult } from '../lib/danteActions';
 
 type Phase = 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking';
 
-const PREFS = 'zenos_live_prefs';
-type Prefs = { voiceURI: string; rate: number; bargeIn: boolean };
-const loadPrefs = (): Prefs => {
-  try { return { voiceURI: '', rate: 1.05, bargeIn: false, ...JSON.parse(localStorage.getItem(PREFS) || '{}') }; } catch { return { voiceURI: '', rate: 1.05, bargeIn: false }; }
-};
+const PREFS = DANTE_VOICE_PREFS_KEY;
+type Prefs = DanteVoicePreferences;
+const loadPrefs = loadDanteVoicePreferences;
 
 /** Live microphone level (0–1) for the orb and for voice interruption. */
 function useMicLevel(active: boolean) {
@@ -90,7 +89,7 @@ export default function DanteLive() {
   const [paused, setPaused] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
-  const [lang, setLang] = useState<string>(() => { try { return JSON.parse(localStorage.getItem('zenos_voice_lang') || '"en-US"'); } catch { return 'en-US'; } });
+  const [lang, setLang] = useState<string>(loadDanteVoiceLanguage);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const phaseRef = useRef(phase); phaseRef.current = phase;
@@ -110,10 +109,7 @@ export default function DanteLive() {
     return () => speechSynthesis.removeEventListener('voiceschanged', load);
   }, []);
   const langVoices = voices.filter(v => v.lang.startsWith(lang.split('-')[0]));
-  const pickVoice = () =>
-    voices.find(v => v.voiceURI === prefs.voiceURI && v.lang.startsWith(lang.split('-')[0])) ||
-    langVoices.find(v => /natural|neural|google|premium|enhanced/i.test(v.name)) ||
-    langVoices[0] || null;
+  const pickVoice = () => pickDanteVoice(voices, lang, prefs.voiceURI);
 
   // ---------- microphone ----------
   const onUtterance = (text: string) => {

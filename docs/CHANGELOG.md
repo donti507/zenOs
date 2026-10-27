@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added Sunday 18:00/timezone-aware and on-demand weekly recaps on Home, canonical task facts and a short suggestion, atomic eight-week cloud/local history, safe background catch-up and Dante Live voice playback with regression tests; apply the migration. (Codex)
+
 - 2026-10-27: Added signed-in Focus Rooms with invite links, private Supabase Realtime Presence, server-synced host-controlled 25/5 timers, canonical completion streaks, multi-tab deduplication, 24-hour inactivity expiry and SQL/API/client regression tests; apply the migration and enable private Realtime. (Codex)
 
 - 2026-10-27: Added admin-created build challenges, owned published-page submissions, confirmed one-vote-per-challenge voting, deadline/tie-aware winner awards, permanent creation/remix/streak badges in account menus, separate local badges, service-only transactional writes and regression tests; apply the migration. (Codex)
