@@ -4,6 +4,7 @@ export const SPACE_LIMITS = {
   js: 24000,
   prompt: 2000,
   reply: 2000,
+  explanation: 1200,
 } as const;
 export type SpaceCode = { html: string; css: string; js: string };
 export type SpacePermissions = { tasks: boolean; events: boolean };
@@ -25,6 +26,8 @@ export type SpaceVersion = SpaceCode & {
   prompt: string;
   reply: string;
   model: string;
+  explanation?: string;
+  parentVersionId?: string | null;
   restoredFrom: string | null;
   createdAt: string;
 };
@@ -108,7 +111,9 @@ export function spaceVersionFromRow(
     pageId = value?.page_id ?? value?.pageId,
     created = value?.created_at ?? value?.createdAt,
     restored = value?.restored_from ?? value?.restoredFrom ?? null;
+  const parent = value?.parent_version_id ?? value?.parentVersionId ?? null;
   if (
+    (parent !== null && !isSpaceId(parent)) ||
     !isSpaceId(id) ||
     !isSpaceId(pageId) ||
     !["initial", "ai", "restore"].includes(value.kind) ||
@@ -129,6 +134,8 @@ export function spaceVersionFromRow(
     ),
     reply: spaceText(value.reply ?? "", SPACE_LIMITS.reply, "edit reply", true),
     model: spaceText(value.model ?? "", 120, "model", true),
+    explanation: spaceText(value.explanation ?? "", SPACE_LIMITS.explanation, "explanation", true),
+    parentVersionId: parent,
     restoredFrom: restored,
     createdAt: created,
   };

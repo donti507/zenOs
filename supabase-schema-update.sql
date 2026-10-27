@@ -771,6 +771,9 @@ CREATE TABLE IF NOT EXISTS public.space_page_versions (
   FOREIGN KEY(page_id,user_id) REFERENCES public.space_pages(id,user_id) ON DELETE CASCADE,
   UNIQUE(page_id,id,user_id)
 );
+-- Legacy versions have no comparison base; new edits record their exact predecessor.
+ALTER TABLE public.space_page_versions ADD COLUMN IF NOT EXISTS explanation text NOT NULL DEFAULT '' CHECK (char_length(explanation)<=1200);
+ALTER TABLE public.space_page_versions ADD COLUMN IF NOT EXISTS parent_version_id uuid;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='space_pages_current_version_fk' AND conrelid='public.space_pages'::regclass) THEN
     ALTER TABLE public.space_pages ADD CONSTRAINT space_pages_current_version_fk FOREIGN KEY(id,current_version_id,user_id)
@@ -819,7 +822,8 @@ $$;
 REVOKE ALL ON FUNCTION public.create_space_page(uuid,text,text,uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.create_space_page(uuid,text,text,uuid) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.save_space_edit(p_page_id uuid,p_expected_version_id uuid,p_version_id uuid,p_html text,p_css text,p_js text,p_prompt text,p_reply text,p_model text)
+DROP FUNCTION IF EXISTS public.save_space_edit(uuid,uuid,uuid,text,text,text,text,text,text);
+CREATE OR REPLACE FUNCTION public.save_space_edit(p_page_id uuid,p_expected_version_id uuid,p_version_id uuid,p_html text,p_css text,p_js text,p_prompt text,p_reply text,p_model text,p_explanation text DEFAULT '')
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE owner_id uuid:=auth.uid(); saved public.space_pages%ROWTYPE;
 BEGIN
@@ -828,14 +832,14 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Page not found'; END IF;
   IF EXISTS(SELECT 1 FROM public.space_page_versions WHERE id=p_version_id AND page_id=saved.id AND user_id=owner_id) THEN RETURN public.space_current_snapshot(saved.id); END IF;
   IF saved.current_version_id IS DISTINCT FROM p_expected_version_id THEN RAISE EXCEPTION 'Page changed; refresh before editing'; END IF;
-  INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js,prompt,reply,model)
-    VALUES(p_version_id,owner_id,saved.id,'ai',p_html,p_css,p_js,p_prompt,p_reply,p_model);
+  INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js,prompt,reply,model,explanation,parent_version_id)
+    VALUES(p_version_id,owner_id,saved.id,'ai',p_html,p_css,p_js,p_prompt,p_reply,p_model,p_explanation,saved.current_version_id);
   UPDATE public.space_pages SET current_version_id=p_version_id,permissions='{"tasks":false,"events":false}',updated_at=now() WHERE id=saved.id AND user_id=owner_id;
   RETURN public.space_current_snapshot(saved.id);
 END;
 $$;
-REVOKE ALL ON FUNCTION public.save_space_edit(uuid,uuid,uuid,text,text,text,text,text,text) FROM PUBLIC,anon;
-GRANT EXECUTE ON FUNCTION public.save_space_edit(uuid,uuid,uuid,text,text,text,text,text,text) TO authenticated;
+REVOKE ALL ON FUNCTION public.save_space_edit(uuid,uuid,uuid,text,text,text,text,text,text,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.save_space_edit(uuid,uuid,uuid,text,text,text,text,text,text,text) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.restore_space_version(p_page_id uuid,p_expected_version_id uuid,p_source_version_id uuid,p_version_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -848,8 +852,8 @@ BEGIN
   IF saved.current_version_id IS DISTINCT FROM p_expected_version_id THEN RAISE EXCEPTION 'Page changed; refresh before restoring'; END IF;
   SELECT * INTO source FROM public.space_page_versions WHERE id=p_source_version_id AND page_id=saved.id AND user_id=owner_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Version not found'; END IF;
-  INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js,prompt,reply,model,restored_from)
-    VALUES(p_version_id,owner_id,saved.id,'restore',source.html,source.css,source.js,'','Restored a saved version.',source.model,source.id);
+  INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js,prompt,reply,model,restored_from,explanation,parent_version_id)
+    VALUES(p_version_id,owner_id,saved.id,'restore',source.html,source.css,source.js,'','Restored a saved version.',source.model,source.id,'Restored this page to a previous save point. Its code replaces the version that was open before the restore.',saved.current_version_id);
   UPDATE public.space_pages SET current_version_id=p_version_id,permissions='{"tasks":false,"events":false}',updated_at=now() WHERE id=saved.id AND user_id=owner_id;
   RETURN public.space_current_snapshot(saved.id);
 END;

@@ -36,7 +36,7 @@ beforeEach(async () => {
     "fetch",
     vi.fn(async () =>
       Response.json({
-        draft: { html: "<main>Timer</main>", css: "", js: "", reply: "Done" },
+        draft: { html: "<main>Timer</main>", css: "", js: "", reply: "Done", explanation: "Added a heading so the page has a clear title." },
       }),
     ),
   );
@@ -75,6 +75,8 @@ it("persists every AI edit, resets permissions, restores old code as a new save 
     );
   });
   expect(edited.version.html).toContain("Timer");
+  expect(edited.version.explanation).toContain("clear title");
+  expect(edited.version.parentVersionId).toBe(initial.version.id);
   expect(edited.page.permissions.tasks).toBe(false);
   expect(
     await api.checkSpaceAccess(initial.page.id, initial.version.id, "tasks"),
@@ -89,6 +91,9 @@ it("persists every AI edit, resets permissions, restores old code as a new save 
   });
   expect(restored.version.html).toContain("Your space");
   expect(restored.version.kind).toBe("restore");
+  expect(restored.version.parentVersionId).toBe(edited.version.id);
+  expect(restored.version.explanation).toContain("Restored");
+  expect((await api.readSpaceVersion(initial.page.id, edited.version.id)).explanation).toBe(edited.version.explanation);
   expect(await api.spaceHistory(initial.page.id)).toHaveLength(3);
   await act(async () => root.unmount());
   root = createRoot(document.createElement("div"));

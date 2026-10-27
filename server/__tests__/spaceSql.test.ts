@@ -25,7 +25,7 @@ const snapshot = async () =>
     .rows[0].value;
 const save = (version = edit, expected = initial) =>
   db.query<any>(
-    "SELECT save_space_edit($1,$2,$3,'<main>Timer</main>','main{padding:1rem}','console.log(1)','Build a timer','Done','allowed-model') AS value",
+    "SELECT save_space_edit($1,$2,$3,'<main>Timer</main>','main{padding:1rem}','console.log(1)','Build a timer','Done','allowed-model','Added a timer to help you focus.') AS value",
     [page, expected, version],
   );
 it("creates private pages with a first immutable version and idempotent creation replay", async () => {
@@ -90,6 +90,16 @@ it("records edits atomically, revokes grants, deduplicates retries and rejects s
     db.query("UPDATE space_pages SET permissions='{}'"),
   ).rejects.toThrow("permission denied");
 });
+it("stores immutable explanations against the exact base and rolls back oversized explanations", async()=>{
+  const data=await snapshot();
+  expect(data.version.explanation).toBe('Added a timer to help you focus.');
+  expect(data.version.parent_version_id).toBe(initial);
+  await expect(db.query("SELECT save_space_edit($1,$2,gen_random_uuid(),'','','','edit','done','model',$3)",[page,edit,'x'.repeat(1201)])).rejects.toThrow();
+  expect((await snapshot()).version.id).toBe(edit);
+  await db.query("SELECT set_config('test.uid',$1,false)",[b]);
+  expect((await db.query('SELECT explanation FROM space_page_versions WHERE page_id=$1',[page])).rows).toHaveLength(0);
+  await db.query("SELECT set_config('test.uid',$1,false)",[a]);
+});
 it("restores any saved version as a new save point and revokes old permissions", async () => {
   await db.query("SELECT set_space_permissions($1,$2,true,true)", [page, edit]);
   for (let i = 0; i < 2; i++)
@@ -101,6 +111,8 @@ it("restores any saved version as a new save point and revokes old permissions",
     ]);
   const data = await snapshot();
   expect(data.version.kind).toBe("restore");
+  expect(data.version.parent_version_id).toBe(edit);
+  expect(data.version.explanation).toContain("Restored");
   expect(data.version.restored_from).toBe(initial);
   expect(data.version.html).toContain("Your space");
   expect(data.page.permissions).toEqual({ tasks: false, events: false });

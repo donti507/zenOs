@@ -6,6 +6,7 @@ import {
   type SpaceVersionInfo,
   noSpacePermissions,
 } from "../../shared/space";
+import SpaceLearn from "../components/SpaceLearn";
 import SpaceFrame from "../components/SpaceFrame";
 import DanteUsageNotice from "../components/DanteUsageNotice";
 import {
@@ -41,6 +42,8 @@ export default function Space() {
     restoreSpaceVersion,
     setSpacePermissions,
   } = useZenos();
+  const [learnMode, setLearnMode] = useState(false);
+  const [learnVersion, setLearnVersion] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<SpaceSnapshot | null>(null);
   const [history, setHistory] = useState<SpaceVersionInfo[]>([]);
   const [more, setMore] = useState(false);
@@ -101,6 +104,7 @@ export default function Space() {
     setBusy(false);
     setSnapshot(null);
     setHistory([]);
+    setLearnVersion(null);
     setError("");
     setPrompt("");
     setPermissionOpen(false);
@@ -210,6 +214,7 @@ export default function Space() {
       if (signal.aborted) return;
       setSnapshot(data);
       setPrompt("");
+      setLearnVersion(data.version.id);
       attempt.current = null;
       await readHistory(data.page.id);
     });
@@ -241,6 +246,7 @@ export default function Space() {
       if (signal.aborted) return;
       setSnapshot(data);
       setRestore(null);
+      setLearnVersion(data.version.id);
       attempt.current = null;
       await readHistory(data.page.id);
     });
@@ -269,6 +275,7 @@ export default function Space() {
         >
           Refresh
         </button>
+        {snapshot && <button type="button" role="switch" aria-checked={learnMode} className={learnMode ? btn.solid : btn.secondary} onClick={() => setLearnMode(value => !value)}>Learn mode</button>}
         {snapshot && <details className="relative">
           <summary className={`${btn.secondary} cursor-pointer`}>Page menu</summary>
           <div className={`${card} absolute z-10 mt-2 p-3 min-w-52 space-y-2`}>
@@ -392,6 +399,7 @@ export default function Space() {
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px] gap-6 items-start">
             <div className="min-w-0 space-y-5">
               <SpaceFrame snapshot={snapshot} />
+              {learnMode && <SpaceLearn pageId={snapshot.page.id} versionId={learnVersion || snapshot.version.id} />}
               <section
                 className={`${card} p-5 space-y-3`}
                 aria-label="Page data permissions"
@@ -568,6 +576,7 @@ export default function Space() {
                           {row.model}
                         </p>
                       )}
+                      {learnMode && <button className={`${btn.secondary} text-sm`} onClick={() => setLearnVersion(row.id)} aria-pressed={(learnVersion || snapshot.version.id) === row.id}>Explain this version</button>}
                       <button
                         className={`${btn.secondary} text-sm`}
                         disabled={busy || row.id === snapshot.version.id}
