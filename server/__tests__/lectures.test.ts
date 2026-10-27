@@ -36,7 +36,8 @@ it('retains successful sections after a provider failure, and never echoes provi
  await f.call(`/${job.id}/chunk/0`);await f.call(`/${job.id}/chunk/1`);expect(calls).toBe(3);expect(f.quota().sttQuota).toBe(3);
 });
 it('rejects silent recordings before charging analysis and expires abandoned sessions',async()=>{
- const f=await fixture({transcribe:async()=>'',ttlMs:30});const job=await(await f.call('/prepare')).json();
+ const f=await fixture({transcribe:async()=>'',ttlMs:60000});const job=await(await f.call('/prepare')).json();
  await f.call(`/${job.id}/chunk/0`);await f.call(`/${job.id}/chunk/1`);expect((await f.call(`/${job.id}/analyze`)).status).toBe(422);expect(f.quota().chatQuota).toBe(0);
- await new Promise(resolve=>setTimeout(resolve,45));expect((await f.call(`/${job.id}/chunk/0`)).status).toBe(404);
+ const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+60001);
+ try{expect((await f.call(`/${job.id}/chunk/0`)).status).toBe(404);}finally{clock.mockRestore();}
 });

@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Installed FFmpeg/ffprobe explicitly in GitHub CI for real lecture-audio tests and removed a wall-clock race from the processing-session expiry test; validated typecheck, all tests and build with CI's Node 22. (Codex)
+
 - 2026-10-27: Fixed managed Realtime migration compatibility by skipping unnecessary RLS ALTERs and atomically deferring policy/trigger setup on ownership denial, allowing later app tables to migrate without weakening channel isolation; added restricted-role regression coverage and troubleshooting instructions. (Codex)
 
 - 2026-10-27: Added Lectures recording/uploads (60 minutes), FFmpeg sub-10 MB transcription sections, streamed analysis progress, saved summaries/key points/ten reviewable flashcards/action items, duplicate-safe task creation, cloud RLS/atomic RPCs and local IndexedDB persistence; added audio/API/SQL/client regression tests and setup documentation. Apply the migration and install FFmpeg. (Codex)
