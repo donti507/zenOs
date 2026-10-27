@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added opt-in public My Space snapshots, sandboxed gallery viewing without data access, credited cloud/local remixes and lineage, duplicate-safe three-report hiding, verified-email admin moderation and title/description filters; added SQL/API/UI/privacy tests and setup documentation. Apply the migration and configure ADMIN_EMAILS. (Codex)
+
 - 2026-10-27: Added the My Space Model Arena tab with two allowlisted concurrent answer streams, atomic two-message daily reservations, private immutable votes/leaderboard, local persistence, scoped cancellation and regression tests; apply the migration and configure two Arena models. (Codex)
 
 - 2026-10-27: Added My Space editing through Dante Live with quota-metered save points, short spoken confirmations after saving, automatic preview/timeline/Learn refresh, scoped cancellation of late transcripts, mobile entry button and regression tests; no new migration. (Codex)

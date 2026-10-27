@@ -7,6 +7,7 @@ import { AppRoutes } from '../App';
 const ctx = vi.hoisted(() => ({ user: null as { id: string } | null, isLoadingData: false, setShowBriefing: vi.fn(), passwordRecovery: false, setPasswordRecovery: vi.fn(), billing: null as { enabled: boolean; plan: 'free' | 'pro' } | null, state: { theme: 'light' }, toggleTheme: vi.fn() }));
 vi.mock('../context/ZenosContext', () => ({ useZenos: () => ctx, ZenosProvider: ({ children }: any) => children }));
 vi.mock('../pages/Login', () => ({ default: ({ initialView }: any) => <h1>{initialView === 'reset-password' ? 'Reset password' : 'Existing Login'}</h1> }));
+vi.mock('../pages/Gallery', () => ({ default: () => <h1>Public gallery</h1> }));
 vi.mock('../pages/Home', () => ({ default: () => <h1>Workspace Home</h1> }));
 vi.mock('../components/layout/AppShell', async () => {
   const { Outlet } = await import('react-router-dom');
@@ -83,4 +84,11 @@ it('offers Pro only when enabled and sends signed-out visitors through login', a
   expect(host.textContent).not.toContain('Coming soon');
   await act(async () => link('Upgrade to Pro').click());
   expect(host.querySelector('h1')?.textContent).toBe('Existing Login');
+});
+
+it.each(['/gallery','/gallery/10000000-0000-0000-0000-000000000001'])('opens public gallery routes without login at %s',async path=>{
+ await render(path);expect(host.querySelector('h1')?.textContent).toBe('Public gallery');
+});
+it('keeps password recovery ahead of public gallery routes',async()=>{
+ ctx.passwordRecovery=true;await render('/gallery');expect(host.querySelector('h1')?.textContent).toBe('Reset password');
 });

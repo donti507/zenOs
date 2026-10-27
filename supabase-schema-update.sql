@@ -971,3 +971,121 @@ RETURNS TABLE(model text,wins bigint,comparisons bigint) LANGUAGE sql SECURITY I
 $$;
 REVOKE ALL ON FUNCTION public.space_arena_leaderboard() FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.space_arena_leaderboard() TO authenticated;
+
+-- Public snapshots are separate from private pages, prompts, history and grants.
+ALTER TABLE public.space_pages ADD COLUMN IF NOT EXISTS remix_source jsonb;
+CREATE TABLE IF NOT EXISTS public.space_gallery_pages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  source_page_id uuid NOT NULL UNIQUE REFERENCES public.space_pages(id) ON DELETE CASCADE,
+  title text NOT NULL CHECK(char_length(btrim(title)) BETWEEN 1 AND 80),
+  description text NOT NULL DEFAULT '' CHECK(char_length(description)<=400),
+  author text NOT NULL CHECK(char_length(btrim(author)) BETWEEN 1 AND 40),
+  html text NOT NULL CHECK(char_length(html)<=24000),css text NOT NULL CHECK(char_length(css)<=16000),js text NOT NULL CHECK(char_length(js)<=24000),
+  parent_id uuid REFERENCES public.space_gallery_pages(id) ON DELETE SET NULL,
+  remix_credit jsonb,
+  published boolean NOT NULL DEFAULT true,
+  moderation text NOT NULL DEFAULT 'visible' CHECK(moderation IN ('visible','hidden','deleted')),
+  report_count integer NOT NULL DEFAULT 0 CHECK(report_count>=0),review_epoch integer NOT NULL DEFAULT 0 CHECK(review_epoch>=0),
+  created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS space_gallery_visible_idx ON public.space_gallery_pages(created_at DESC,id) WHERE published AND moderation='visible';
+CREATE INDEX IF NOT EXISTS space_gallery_parent_idx ON public.space_gallery_pages(parent_id);
+CREATE INDEX IF NOT EXISTS space_gallery_owner_idx ON public.space_gallery_pages(user_id,id);
+CREATE TABLE IF NOT EXISTS public.space_gallery_reports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  gallery_id uuid NOT NULL REFERENCES public.space_gallery_pages(id) ON DELETE CASCADE,
+  review_epoch integer NOT NULL,reason text NOT NULL CHECK(reason IN ('inappropriate','unsafe','spam','other')),created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(gallery_id,user_id,review_epoch)
+);
+ALTER TABLE public.space_gallery_pages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.space_gallery_reports ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS space_gallery_reports_owner_idx ON public.space_gallery_reports(user_id,id);
+REVOKE ALL ON public.space_gallery_pages,public.space_gallery_reports FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON public.space_gallery_pages,public.space_gallery_reports TO authenticated;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.space_gallery_pages,public.space_gallery_reports TO service_role;
+DROP POLICY IF EXISTS space_gallery_own ON public.space_gallery_pages;
+CREATE POLICY space_gallery_own ON public.space_gallery_pages FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+DROP POLICY IF EXISTS space_gallery_reports_own ON public.space_gallery_reports;
+CREATE POLICY space_gallery_reports_own ON public.space_gallery_reports FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+
+CREATE OR REPLACE FUNCTION public.publish_space_gallery(p_user_id uuid,p_page_id uuid,p_version_id uuid,p_title text,p_description text,p_author text)
+RETURNS uuid LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE page public.space_pages%ROWTYPE; version public.space_page_versions%ROWTYPE; existing public.space_gallery_pages%ROWTYPE; parent uuid; result uuid;
+BEGIN
+ SELECT * INTO page FROM public.space_pages WHERE id=p_page_id AND user_id=p_user_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Page not found'; END IF;
+ IF page.current_version_id IS DISTINCT FROM p_version_id THEN RAISE EXCEPTION 'Page changed; refresh before publishing'; END IF;
+ SELECT * INTO STRICT version FROM public.space_page_versions WHERE id=p_version_id AND page_id=page.id AND user_id=p_user_id;
+ SELECT * INTO existing FROM public.space_gallery_pages WHERE source_page_id=page.id FOR UPDATE;
+ IF FOUND AND existing.moderation<>'visible' THEN RAISE EXCEPTION 'Publication requires moderation review'; END IF;
+ SELECT id INTO parent FROM public.space_gallery_pages WHERE id=(page.remix_source->>'id')::uuid;
+ IF existing.id IS NULL THEN
+  INSERT INTO public.space_gallery_pages(user_id,source_page_id,title,description,author,html,css,js,parent_id,remix_credit)
+   VALUES(p_user_id,page.id,p_title,p_description,p_author,version.html,version.css,version.js,parent,page.remix_source) RETURNING id INTO result;
+ ELSE
+  UPDATE public.space_gallery_pages SET title=p_title,description=p_description,author=p_author,html=version.html,css=version.css,js=version.js,published=true,updated_at=now() WHERE id=existing.id RETURNING id INTO result;
+ END IF;
+ RETURN result;
+END;
+$$;
+CREATE OR REPLACE FUNCTION public.withdraw_space_gallery(p_user_id uuid,p_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+ UPDATE public.space_gallery_pages SET published=false,updated_at=now() WHERE id=p_id AND user_id=p_user_id;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Publication not found'; END IF;
+END;
+$$;
+CREATE OR REPLACE FUNCTION public.report_space_gallery(p_user_id uuid,p_id uuid,p_reason text)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE page public.space_gallery_pages%ROWTYPE; added integer;
+BEGIN
+ IF p_reason IS NULL OR p_reason NOT IN ('inappropriate','unsafe','spam','other') THEN RAISE EXCEPTION 'Invalid reason'; END IF;
+ SELECT * INTO page FROM public.space_gallery_pages WHERE id=p_id FOR UPDATE;
+ IF NOT FOUND OR page.user_id=p_user_id THEN RAISE EXCEPTION 'Page not available for reporting'; END IF;
+ IF EXISTS(SELECT 1 FROM public.space_gallery_reports WHERE gallery_id=p_id AND user_id=p_user_id AND review_epoch=page.review_epoch) THEN RETURN; END IF;
+ IF NOT page.published OR page.moderation<>'visible' THEN RAISE EXCEPTION 'Page not available for reporting'; END IF;
+ INSERT INTO public.space_gallery_reports(user_id,gallery_id,review_epoch,reason) VALUES(p_user_id,p_id,page.review_epoch,p_reason) ON CONFLICT DO NOTHING;
+ GET DIAGNOSTICS added=ROW_COUNT;
+ IF added>0 THEN UPDATE public.space_gallery_pages SET report_count=report_count+1,moderation=CASE WHEN report_count+1>=3 THEN 'hidden' ELSE moderation END,updated_at=now() WHERE id=p_id; END IF;
+END;
+$$;
+CREATE OR REPLACE FUNCTION public.moderate_space_gallery(p_id uuid,p_action text)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE page public.space_gallery_pages%ROWTYPE;
+BEGIN
+ SELECT * INTO page FROM public.space_gallery_pages WHERE id=p_id FOR UPDATE;
+ IF NOT FOUND OR page.moderation='deleted' THEN RAISE EXCEPTION 'Publication not found'; END IF;
+ IF p_action='hide' THEN UPDATE public.space_gallery_pages SET moderation='hidden',updated_at=now() WHERE id=p_id;
+ ELSIF p_action='restore' THEN UPDATE public.space_gallery_pages SET moderation='visible',report_count=0,review_epoch=review_epoch+1,updated_at=now() WHERE id=p_id;
+ ELSIF p_action='delete' THEN UPDATE public.space_gallery_pages SET moderation='deleted',published=false,html='',css='',js='',title='Deleted publication',description='',author='Creator',updated_at=now() WHERE id=p_id;
+ ELSE RAISE EXCEPTION 'Invalid moderation action'; END IF;
+END;
+$$;
+CREATE OR REPLACE FUNCTION public.remix_space_gallery(p_user_id uuid,p_id uuid,p_new_id uuid,p_slug text,p_title text,p_version_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE source public.space_gallery_pages%ROWTYPE; existing public.space_pages%ROWTYPE;
+BEGIN
+ SELECT * INTO existing FROM public.space_pages WHERE id=p_new_id AND user_id=p_user_id;
+ IF FOUND THEN
+  IF existing.remix_source->>'id' IS DISTINCT FROM p_id::text THEN RAISE EXCEPTION 'Remix request conflict'; END IF;
+  RETURN (SELECT jsonb_build_object('page',to_jsonb(p),'version',to_jsonb(v)) FROM public.space_pages p JOIN public.space_page_versions v ON v.id=p.current_version_id AND v.page_id=p.id AND v.user_id=p.user_id WHERE p.id=existing.id AND p.user_id=p_user_id);
+ END IF;
+ SELECT * INTO source FROM public.space_gallery_pages WHERE id=p_id AND published AND moderation='visible' FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Public page not found'; END IF;
+ INSERT INTO public.space_pages(id,user_id,slug,title,current_version_id,remix_source) VALUES(p_new_id,p_user_id,p_slug,p_title,p_version_id,jsonb_build_object('id',source.id,'title',source.title,'author',source.author)||CASE WHEN source.remix_credit IS NOT NULL THEN jsonb_build_object('original',coalesce(source.remix_credit->'original',source.remix_credit)) ELSE '{}'::jsonb END);
+ INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js,explanation) VALUES(p_version_id,p_user_id,p_new_id,'initial',source.html,source.css,source.js,'Copied a public gallery page into your private space with credit to its author.');
+ RETURN (SELECT jsonb_build_object('page',to_jsonb(p),'version',to_jsonb(v)) FROM public.space_pages p JOIN public.space_page_versions v ON v.id=p.current_version_id AND v.page_id=p.id AND v.user_id=p.user_id WHERE p.id=p_new_id AND p.user_id=p_user_id);
+END;
+$$;
+CREATE OR REPLACE FUNCTION public.space_gallery_tree(p_id uuid)
+RETURNS TABLE(id uuid,parent_id uuid,title text,author text,depth integer) LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+ WITH RECURSIVE lineage AS (
+  SELECT p.id,p.parent_id,p.title,p.author,0 AS depth,ARRAY[p.id] AS path FROM public.space_gallery_pages p WHERE p.id=p_id AND p.published AND p.moderation='visible'
+  UNION ALL SELECT p.id,p.parent_id,p.title,p.author,l.depth-1,l.path||p.id FROM lineage l JOIN public.space_gallery_pages p ON p.id=l.parent_id
+   WHERE p.published AND p.moderation='visible' AND l.depth> -20 AND NOT p.id=ANY(l.path)
+ ), children AS (SELECT p.id,p.parent_id,p.title,p.author,1 AS depth FROM public.space_gallery_pages p WHERE p.parent_id=p_id AND p.published AND p.moderation='visible' ORDER BY p.created_at,p.id LIMIT 50)
+ SELECT l.id,l.parent_id,l.title,l.author,l.depth FROM lineage l UNION ALL SELECT * FROM children ORDER BY 5,1;
+$$;
+REVOKE ALL ON FUNCTION public.publish_space_gallery(uuid,uuid,uuid,text,text,text),public.withdraw_space_gallery(uuid,uuid),public.report_space_gallery(uuid,uuid,text),public.moderate_space_gallery(uuid,text),public.remix_space_gallery(uuid,uuid,uuid,text,text,uuid),public.space_gallery_tree(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.publish_space_gallery(uuid,uuid,uuid,text,text,text),public.withdraw_space_gallery(uuid,uuid),public.report_space_gallery(uuid,uuid,text),public.moderate_space_gallery(uuid,text),public.remix_space_gallery(uuid,uuid,uuid,text,text,uuid),public.space_gallery_tree(uuid) TO service_role;

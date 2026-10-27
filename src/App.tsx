@@ -17,6 +17,7 @@ const Tasks = lazy(() => import('./pages/Tasks'));
 const Kanban = lazy(() => import('./pages/Board'));
 const Calendar = lazy(() => import('./pages/Calendar'));
 const Meetings = lazy(() => import('./pages/Meetings'));
+const Gallery = lazy(() => import('./pages/Gallery'));
 const Space = lazy(() => import('./pages/Space'));
 const Search = lazy(() => import('./pages/Search'));
 const Lectures = lazy(() => import('./pages/Lectures'));
@@ -25,8 +26,8 @@ const Vault = lazy(() => import('./pages/Vault'));
 const DanteAI = lazy(() => import('./components/views/DanteAI'));
 
 export function AppRoutes() {
-  const { pathname } = useLocation();
-  const { user, isLoadingData, setShowBriefing, passwordRecovery, setPasswordRecovery } = useZenos();
+  const { pathname, search: routeSearch } = useLocation();
+  const { user, isOffline, isLoadingData, setShowBriefing, passwordRecovery, setPasswordRecovery } = useZenos();
 
   // Morning briefing once per day between 5:00 and 11:00
   useEffect(() => {
@@ -42,6 +43,7 @@ export function AppRoutes() {
   if (pathname === '/privacy' || pathname === '/terms') return <Legal page={pathname === '/privacy' ? 'privacy' : 'terms'} />;
 
   if (passwordRecovery) return <Suspense fallback={<PageLoader />}><Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} /></Suspense>;
+  if (pathname === '/gallery' || pathname.startsWith('/gallery/')) return <Suspense fallback={<PageLoader />}><div key={`${user?.id||'public'}:${isOffline}:${pathname}:${routeSearch}`}><Gallery /></div></Suspense>;
   if (!user && pathname === '/') return <Suspense fallback={<PageLoader />}><Landing /></Suspense>;
   if (!user) return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
 
