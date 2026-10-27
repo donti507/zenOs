@@ -26,6 +26,7 @@ export function useSpeechRecognition({ lang, onFinal }: { lang: string; onFinal:
   const [error, setError] = useState<string | null>(null);
 
   const recRef = useRef<any>(null);
+  const generationRef = useRef(0);
   const finalRef = useRef('');
   const onFinalRef = useRef(onFinal);
   onFinalRef.current = onFinal;
@@ -36,7 +37,10 @@ export function useSpeechRecognition({ lang, onFinal }: { lang: string; onFinal:
   /** Stops without delivering the transcript. */
   const cancel = useCallback(() => {
     cancelledRef.current = true;
+    ++generationRef.current;
     recRef.current?.abort();
+    setListening(false);
+    setInterim('');
   }, []);
 
   const start = useCallback(() => {
@@ -49,6 +53,7 @@ export function useSpeechRecognition({ lang, onFinal }: { lang: string; onFinal:
       setError('Voice input only works over HTTPS (or on localhost).');
       return;
     }
+    const generation = ++generationRef.current;
     recRef.current?.abort();
 
     const rec = new Ctor();
@@ -63,15 +68,17 @@ export function useSpeechRecognition({ lang, onFinal }: { lang: string; onFinal:
     const armSilence = () => {
       if (silenceTimer) clearTimeout(silenceTimer);
       // auto-stop after ~1.8s of silence once something was said
-      silenceTimer = setTimeout(() => rec.stop(), 1800);
+      silenceTimer = setTimeout(() => { if (generation === generationRef.current) rec.stop(); }, 1800);
     };
 
     rec.onstart = () => {
+      if (generation !== generationRef.current) return;
       setListening(true);
       setError(null);
       setInterim('');
     };
     rec.onresult = (e: any) => {
+      if (generation !== generationRef.current) return;
       let interimText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -82,11 +89,12 @@ export function useSpeechRecognition({ lang, onFinal }: { lang: string; onFinal:
       armSilence();
     };
     rec.onerror = (e: any) => {
-      if (e.error === 'aborted') return;
+      if (generation !== generationRef.current || e.error === 'aborted') return;
       setError(ERROR_MESSAGES[e.error] || `Voice input error: ${e.error}`);
     };
     rec.onend = () => {
       if (silenceTimer) clearTimeout(silenceTimer);
+      if (generation !== generationRef.current) return;
       setListening(false);
       setInterim('');
       const text = finalRef.current.trim();
@@ -102,7 +110,7 @@ export function useSpeechRecognition({ lang, onFinal }: { lang: string; onFinal:
     }
   }, [lang]);
 
-  useEffect(() => () => recRef.current?.abort(), []);
+  useEffect(() => () => { ++generationRef.current; recRef.current?.abort(); }, []);
 
   return { supported, listening, interim, error, setError, start, stop, cancel };
 }

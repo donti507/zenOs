@@ -1,3 +1,4 @@
+import { spaceText, SPACE_LIMITS } from '../../shared/space';
 import { validateMemoryFact, type DanteMemory } from '../../shared/danteMemory';
 import { isRecurrence } from './recurrence';
 import { Task, Meeting, ZenosState } from '../types';
@@ -8,6 +9,7 @@ export type ActionResult = { label: string; ok: boolean; detail?: string };
 
 export interface ActionDeps {
   stateRef: { current: ZenosState };
+  editSpacePageFromVoice?: (instruction: string) => Promise<void>;
   rememberFact?: (fact: string) => Promise<DanteMemory>;
   forgetFact?: (id: string) => Promise<void>;
   confirmForgetFact?: (fact: DanteMemory) => Promise<boolean>;
@@ -49,6 +51,12 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
   const executeAction = async (a: DanteAction): Promise<ActionResult> => {
     const d = a.data || {};
     switch (a.action) {
+      case 'edit_space_page': {
+        const instruction = spaceText(d.instruction, SPACE_LIMITS.prompt, 'page instruction');
+        if (!deps.editSpacePageFromVoice) return {label: 'Update page', ok: false, detail: 'Open Dante Live on a My Space page to edit it.'};
+        await deps.editSpacePageFromVoice(instruction);
+        return {label: 'New page save point', ok: true};
+      }
       case 'remember': {
         const fact = validateMemoryFact(d.fact);
         if (!deps.rememberFact) return { label: 'Remember fact', ok: false, detail: 'Memory is unavailable' };

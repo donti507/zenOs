@@ -22,6 +22,8 @@ export function useRecorderTranscription({
   const [level, setLevel] = useState(0);
 
   const recRef = useRef<MediaRecorder | null>(null);
+  const generationRef = useRef(0);
+  const transcriptionRef = useRef<AbortController | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number>(0);
@@ -44,13 +46,20 @@ export function useRecorderTranscription({
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
+    ++generationRef.current;
+    transcriptionRef.current?.abort();
     stop();
+    cleanup();
+    setListening(false);
+    setInterim('');
   }, [stop]);
 
   const start = useCallback(async () => {
     if (!supported) return setError('Recording is not supported in this browser.');
     if (!window.isSecureContext) return setError('Voice input only works over HTTPS (or on localhost).');
     if (recRef.current?.state === 'recording') return;
+    const generation = ++generationRef.current;
+    transcriptionRef.current?.abort();
     setError(null);
     cancelledRef.current = false;
 
@@ -58,8 +67,10 @@ export function useRecorderTranscription({
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch (err: any) {
+      if (generation !== generationRef.current) return;
       return setError(err?.name === 'NotAllowedError' ? 'Microphone access was blocked. Allow it in the browser’s site settings.' : 'No microphone was found.');
     }
+    if (generation !== generationRef.current) { stream.getTracks().forEach(track => track.stop()); return; }
     streamRef.current = stream;
 
     const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t)) || '';
@@ -78,6 +89,7 @@ export function useRecorderTranscription({
     let heardSpeech = false;
     let lastLoud = Date.now();
     const tick = () => {
+      if (generation !== generationRef.current) return;
       analyser.getByteTimeDomainData(buf);
       let sum = 0;
       for (const v of buf) sum += ((v - 128) / 128) ** 2;
@@ -92,29 +104,35 @@ export function useRecorderTranscription({
       rafRef.current = requestAnimationFrame(tick);
     };
 
-    rec.onstart = () => { setListening(true); setInterim('Listening…'); tick(); };
+    rec.onstart = () => { if (generation !== generationRef.current) return; setListening(true); setInterim('Listening…'); tick(); };
     rec.onstop = async () => {
+      if (generation !== generationRef.current) return;
       cleanup();
       setListening(false);
       if (cancelledRef.current || !heardSpeech) { setInterim(''); if (!heardSpeech && !cancelledRef.current) setError('I didn’t hear anything. Try again a little closer to the mic.'); return; }
       setInterim('Transcribing…');
+      const abort = new AbortController();
+      transcriptionRef.current = abort;
       try {
         const token = await getToken();
+        if (generation !== generationRef.current) return;
         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
         const res = await fetch(`/api/transcribe?lang=${encodeURIComponent(lang)}`, {
           method: 'POST',
+          signal: abort.signal,
           headers: { 'Content-Type': blob.type.split(';')[0], ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: blob,
         });
         const data = await res.json().catch(() => ({}));
+        if (generation !== generationRef.current) return;
         if (!res.ok) throw new Error(data.error || `Transcription failed (${res.status}).`);
         if (data.text) onFinalRef.current(data.text);
         else setError('I couldn’t make out any words. Try again.');
       } catch (err: any) {
-        setError(err?.message || 'Transcription failed.');
+        if (generation === generationRef.current && !abort.signal.aborted) setError(err?.message || 'Transcription failed.');
       } finally {
         notifyDanteUsage();
-        setInterim('');
+        if (generation === generationRef.current) setInterim('');
       }
     };
 
@@ -122,7 +140,7 @@ export function useRecorderTranscription({
     rec.start(250);
   }, [supported, lang, stop, getToken]);
 
-  useEffect(() => () => { cancelledRef.current = true; recRef.current?.state === 'recording' && recRef.current.stop(); cleanup(); }, []);
+  useEffect(() => () => { ++generationRef.current; transcriptionRef.current?.abort(); cancelledRef.current = true; recRef.current?.state === 'recording' && recRef.current.stop(); cleanup(); }, []);
 
   return { supported, listening, interim, error, setError, start, stop, cancel, level };
 }
