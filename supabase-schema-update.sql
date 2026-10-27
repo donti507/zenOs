@@ -741,3 +741,141 @@ $ddl$, '__VECTOR_SCHEMA__', quote_ident(vector_schema));
   END LOOP;
 END;
 $search_setup$;
+
+-- Private AI-created pages. Raw code is only ever rendered in an opaque iframe.
+CREATE TABLE IF NOT EXISTS public.space_pages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  slug text NOT NULL CHECK (char_length(slug) BETWEEN 1 AND 48 AND slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+  title text NOT NULL CHECK (char_length(btrim(title)) BETWEEN 1 AND 80),
+  current_version_id uuid,
+  permissions jsonb NOT NULL DEFAULT '{"tasks":false,"events":false}'::jsonb
+    CHECK (jsonb_typeof(permissions->'tasks')='boolean' AND jsonb_typeof(permissions->'events')='boolean' AND permissions ? 'tasks' AND permissions ? 'events'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id,slug), UNIQUE(id,user_id)
+);
+CREATE TABLE IF NOT EXISTS public.space_page_versions (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  page_id uuid NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('initial','ai','restore')),
+  html text NOT NULL CHECK (octet_length(html)<=96000 AND char_length(html)<=24000),
+  css text NOT NULL CHECK (octet_length(css)<=64000 AND char_length(css)<=16000),
+  js text NOT NULL CHECK (octet_length(js)<=96000 AND char_length(js)<=24000),
+  prompt text NOT NULL DEFAULT '' CHECK (char_length(prompt)<=2000),
+  reply text NOT NULL DEFAULT '' CHECK (char_length(reply)<=2000),
+  model text NOT NULL DEFAULT '' CHECK (char_length(model)<=120),
+  restored_from uuid,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY(page_id,user_id) REFERENCES public.space_pages(id,user_id) ON DELETE CASCADE,
+  UNIQUE(page_id,id,user_id)
+);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='space_pages_current_version_fk' AND conrelid='public.space_pages'::regclass) THEN
+    ALTER TABLE public.space_pages ADD CONSTRAINT space_pages_current_version_fk FOREIGN KEY(id,current_version_id,user_id)
+      REFERENCES public.space_page_versions(page_id,id,user_id) DEFERRABLE INITIALLY DEFERRED;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS space_pages_owner_idx ON public.space_pages(user_id,created_at);
+CREATE INDEX IF NOT EXISTS space_versions_recent_idx ON public.space_page_versions(user_id,page_id,created_at DESC,id DESC);
+ALTER TABLE public.space_pages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.space_page_versions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.space_pages,public.space_page_versions FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON public.space_pages,public.space_page_versions TO authenticated;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.space_pages,public.space_page_versions TO service_role;
+DROP POLICY IF EXISTS space_pages_own ON public.space_pages;
+CREATE POLICY space_pages_own ON public.space_pages FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+DROP POLICY IF EXISTS space_versions_own ON public.space_page_versions;
+CREATE POLICY space_versions_own ON public.space_page_versions FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+
+CREATE OR REPLACE FUNCTION public.space_current_snapshot(p_page_id uuid)
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+  SELECT jsonb_build_object('page',to_jsonb(p),'version',to_jsonb(v)) FROM public.space_pages p
+    JOIN public.space_page_versions v ON v.id=p.current_version_id AND v.page_id=p.id AND v.user_id=p.user_id
+    WHERE p.id=p_page_id AND p.user_id=auth.uid();
+$$;
+REVOKE ALL ON FUNCTION public.space_current_snapshot(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.space_current_snapshot(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.create_space_page(p_id uuid,p_slug text,p_title text,p_version_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE owner_id uuid:=auth.uid(); saved public.space_pages%ROWTYPE;
+BEGIN
+  IF owner_id IS NULL OR p_id IS NULL OR p_version_id IS NULL THEN RAISE EXCEPTION 'Authentication required'; END IF;
+  SELECT * INTO saved FROM public.space_pages WHERE id=p_id AND user_id=owner_id;
+  IF FOUND THEN
+    IF NOT EXISTS(SELECT 1 FROM public.space_page_versions WHERE id=p_version_id AND page_id=saved.id AND user_id=owner_id AND kind='initial') THEN RAISE EXCEPTION 'Page request conflict'; END IF;
+    RETURN public.space_current_snapshot(saved.id);
+  END IF;
+  INSERT INTO public.space_pages(id,user_id,slug,title) VALUES(p_id,owner_id,p_slug,btrim(p_title));
+  INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js) VALUES(p_version_id,owner_id,p_id,'initial',
+    '<main><h1>Your space</h1><p>Describe what you want to build in the chat.</p></main>',
+    'main { max-width: 60rem; margin: auto; padding: 2rem; }','');
+  UPDATE public.space_pages SET current_version_id=p_version_id WHERE id=p_id AND user_id=owner_id;
+  RETURN public.space_current_snapshot(p_id);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.create_space_page(uuid,text,text,uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.create_space_page(uuid,text,text,uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.save_space_edit(p_page_id uuid,p_expected_version_id uuid,p_version_id uuid,p_html text,p_css text,p_js text,p_prompt text,p_reply text,p_model text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE owner_id uuid:=auth.uid(); saved public.space_pages%ROWTYPE;
+BEGIN
+  IF owner_id IS NULL OR p_version_id IS NULL THEN RAISE EXCEPTION 'Authentication required'; END IF;
+  SELECT * INTO saved FROM public.space_pages WHERE id=p_page_id AND user_id=owner_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Page not found'; END IF;
+  IF EXISTS(SELECT 1 FROM public.space_page_versions WHERE id=p_version_id AND page_id=saved.id AND user_id=owner_id) THEN RETURN public.space_current_snapshot(saved.id); END IF;
+  IF saved.current_version_id IS DISTINCT FROM p_expected_version_id THEN RAISE EXCEPTION 'Page changed; refresh before editing'; END IF;
+  INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js,prompt,reply,model)
+    VALUES(p_version_id,owner_id,saved.id,'ai',p_html,p_css,p_js,p_prompt,p_reply,p_model);
+  UPDATE public.space_pages SET current_version_id=p_version_id,permissions='{"tasks":false,"events":false}',updated_at=now() WHERE id=saved.id AND user_id=owner_id;
+  RETURN public.space_current_snapshot(saved.id);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.save_space_edit(uuid,uuid,uuid,text,text,text,text,text,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.save_space_edit(uuid,uuid,uuid,text,text,text,text,text,text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.restore_space_version(p_page_id uuid,p_expected_version_id uuid,p_source_version_id uuid,p_version_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE owner_id uuid:=auth.uid(); saved public.space_pages%ROWTYPE; source public.space_page_versions%ROWTYPE;
+BEGIN
+  IF owner_id IS NULL OR p_version_id IS NULL THEN RAISE EXCEPTION 'Authentication required'; END IF;
+  SELECT * INTO saved FROM public.space_pages WHERE id=p_page_id AND user_id=owner_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Page not found'; END IF;
+  IF EXISTS(SELECT 1 FROM public.space_page_versions WHERE id=p_version_id AND page_id=saved.id AND user_id=owner_id) THEN RETURN public.space_current_snapshot(saved.id); END IF;
+  IF saved.current_version_id IS DISTINCT FROM p_expected_version_id THEN RAISE EXCEPTION 'Page changed; refresh before restoring'; END IF;
+  SELECT * INTO source FROM public.space_page_versions WHERE id=p_source_version_id AND page_id=saved.id AND user_id=owner_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Version not found'; END IF;
+  INSERT INTO public.space_page_versions(id,user_id,page_id,kind,html,css,js,prompt,reply,model,restored_from)
+    VALUES(p_version_id,owner_id,saved.id,'restore',source.html,source.css,source.js,'','Restored a saved version.',source.model,source.id);
+  UPDATE public.space_pages SET current_version_id=p_version_id,permissions='{"tasks":false,"events":false}',updated_at=now() WHERE id=saved.id AND user_id=owner_id;
+  RETURN public.space_current_snapshot(saved.id);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.restore_space_version(uuid,uuid,uuid,uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.restore_space_version(uuid,uuid,uuid,uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.set_space_permissions(p_page_id uuid,p_expected_version_id uuid,p_tasks boolean,p_events boolean)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE saved public.space_pages%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL OR p_tasks IS NULL OR p_events IS NULL THEN RAISE EXCEPTION 'Invalid permission request'; END IF;
+  SELECT * INTO saved FROM public.space_pages WHERE id=p_page_id AND user_id=auth.uid() FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Page not found'; END IF;
+  IF saved.current_version_id IS DISTINCT FROM p_expected_version_id THEN RAISE EXCEPTION 'Page changed; refresh before granting access'; END IF;
+  UPDATE public.space_pages SET permissions=jsonb_build_object('tasks',p_tasks,'events',p_events),updated_at=now() WHERE id=saved.id AND user_id=auth.uid() RETURNING * INTO saved;
+  RETURN to_jsonb(saved);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.set_space_permissions(uuid,uuid,boolean,boolean) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.set_space_permissions(uuid,uuid,boolean,boolean) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.space_bridge_permission(p_page_id uuid,p_version_id uuid,p_method text)
+RETURNS boolean LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+  SELECT coalesce((SELECT p.current_version_id=p_version_id AND p_method IN ('tasks','events') AND p.permissions->>p_method='true'
+    FROM public.space_pages p WHERE p.id=p_page_id AND p.user_id=auth.uid()),false);
+$$;
+REVOKE ALL ON FUNCTION public.space_bridge_permission(uuid,uuid,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.space_bridge_permission(uuid,uuid,text) TO authenticated;

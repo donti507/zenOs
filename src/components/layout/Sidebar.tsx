@@ -8,6 +8,7 @@ const NAV = [
   { to: '/', label: 'Home', icon: 'home' },
   { to: '/board', label: 'Board', icon: 'view_kanban' },
   { to: '/calendar', label: 'Calendar', icon: 'calendar_today' },
+  { to: '/space', label: 'My Space', icon: 'dashboard_customize' },
   { to: '/search', label: 'Search', icon: 'search' },
   { to: '/lectures', label: 'Lectures', icon: 'school' },
   { to: '/meetings', label: 'Meetings', icon: 'videocam' },
@@ -23,7 +24,7 @@ const navClass = (collapsed: boolean) => ({ isActive }: { isActive: boolean }) =
   }`;
 
 export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  const { state, updateState, user, logOut, setShowModal, isOffline } = useZenos();
+  const { state, updateState, user, logOut, setShowModal, isOffline, spacePages } = useZenos();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -76,6 +77,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           ))}
         </nav>
 
+        {!collapsed&&!!spacePages?.length&&<nav className="mt-5 px-4 space-y-1" aria-label="My Space pages"><span className="block text-xs font-semibold text-on-surface-variant mb-2">Your pages</span>{spacePages.map(page=><NavLink key={page.id} to={`/space/${page.slug}`} className={({isActive})=>`block px-2 py-1.5 rounded-lg truncate text-sm ${isActive?'bg-primary-container text-on-primary-container':'text-on-surface-variant hover:bg-surface-container'}`} title={page.title}>{page.title}</NavLink>)}</nav>}
         {/* Categories */}
         {!collapsed && (
           <div className="mt-6 px-4">

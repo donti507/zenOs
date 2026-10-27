@@ -19,6 +19,7 @@ const DanteLive = lazy(() => import('../DanteLive'));
 const MOBILE_TABS = [
   { to: '/', icon: 'home', label: 'Home' },
   { to: '/board', icon: 'view_kanban', label: 'Board' },
+  { to: '/space', icon: 'dashboard_customize', label: 'Space' },
   { to: '/search', icon: 'search', label: 'Search' },
   { to: '/calendar', icon: 'calendar_today', label: 'Calendar' },
   { to: '/lectures', icon: 'school', label: 'Lectures' },
@@ -130,13 +131,13 @@ export default function AppShell() {
           <DanteOrb size={52} />
         </NavLink>
       )}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.05)] flex items-center justify-around z-40 pb-[env(safe-area-inset-bottom)]" aria-label="Main">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.05)] flex items-center justify-around overflow-x-auto z-40 pb-[env(safe-area-inset-bottom)]" aria-label="Main">
         {MOBILE_TABS.map(t => (
           <NavLink
             key={t.to}
             to={t.to}
             end={t.to === '/'}
-            className={({ isActive }) => `flex flex-col items-center gap-0.5 flex-1 min-w-0 py-1 transition-colors ${isActive ? 'text-primary' : 'text-on-surface-variant'}`}
+            className={({ isActive }) => `flex flex-col items-center gap-0.5 flex-1 min-w-[46px] py-1 transition-colors ${isActive ? 'text-primary' : 'text-on-surface-variant'}`}
           >
             {({ isActive }) => (
               <>

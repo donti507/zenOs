@@ -33,7 +33,7 @@ const VOICE_LANGS = [
   { code: "fr-FR", label: "Français" },
   { code: "uk-UA", label: "Українська" },
 ];
-const VIEWS = ["dashboard", "kanban", "calendar", "meetings", "analytics", "vault", "dante", "lectures", "search"];
+const VIEWS = ["dashboard", "kanban", "calendar", "meetings", "analytics", "vault", "dante", "lectures", "search", "space"];
 const HISTORY_TO_SEND = 12;
 
 type Status = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean; stt?: boolean };
