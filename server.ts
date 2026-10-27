@@ -1,3 +1,4 @@
+import { createWeeklyRecaps } from './server/weeklyRecaps';
 import { createFocusRooms } from './server/focusRooms';
 import { createChallenges } from './server/challenges';
 import 'dotenv/config';
@@ -43,6 +44,11 @@ async function startServer() {
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
 
+  const weeklyRecaps=createWeeklyRecaps();
+  weeklyRecaps.startWorker();
+  app.get('/api/weekly-recaps',requireUser,weeklyRecaps.gate,weeklyRecaps.list);
+  app.post('/api/weekly-recaps/settings',requireUser,weeklyRecaps.gate,weeklyRecaps.configure);
+  app.post('/api/weekly-recaps/generate',requireUser,weeklyRecaps.gate,rateLimit,weeklyRecaps.generate);
   const focusRooms=createFocusRooms();
   app.get('/api/focus-rooms',requireUser,focusRooms.gate,focusRooms.list);
   app.post('/api/focus-rooms',requireUser,focusRooms.gate,rateLimit,focusRooms.create);

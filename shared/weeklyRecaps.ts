@@ -1,0 +1,29 @@
+import {isSpaceId,spaceText} from './space';
+export type RecapTask={id:string|number;title:string;status:string;date?:string;completedAt?:string|null};
+export type WeeklyRecap={id:string;weekStart:string;throughDate:string;timeZone:string;tasksDone:number;bestDay:string|null;bestDayCount:number;streak:number;slippedCount:number;slippedTasks:{id:string;title:string}[];suggestion:string;kind:'manual'|'scheduled';createdAt:string;updatedAt:string};
+export type RecapSettings={timeZone:string;enabled:boolean;nextDueAt:string};
+export function calendarDay(date:Date,timeZone:string){const parts=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);return ['year','month','day'].map(key=>parts.find(p=>p.type===key)!.value).join('-');}
+export function shiftRecapDay(day:string,amount:number){const date=new Date(day+'T00:00:00Z');date.setUTCDate(date.getUTCDate()+amount);return [date.getUTCFullYear(),String(date.getUTCMonth()+1).padStart(2,'0'),String(date.getUTCDate()).padStart(2,'0')].join('-');}
+export function recapMonday(day:string){return shiftRecapDay(day,-((new Date(day+'T00:00:00Z').getUTCDay()+6)%7));}
+export function recapSuggestion(done:number,slipped:number,streak:number){return slipped>0?'Choose one slipped task and give it a smaller first step.':done===0?'Pick one small task for a ten-minute start.':streak>=5?'Keep your rhythm, and leave space for a proper break.':'Protect a short focus block on your calendar next week.';}
+export function recapDayLabel(day:string){return new Date(day+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long'});}
+export function recapSpeech(recap:WeeklyRecap){
+ const best=recap.bestDay?`Your best day was ${recapDayLabel(recap.bestDay)}, with ${recap.bestDayCount} completed ${recap.bestDayCount===1?'task':'tasks'}.`:'There is no best day yet because no completions were recorded.';
+ const slipped=recap.slippedCount?`${recap.slippedCount} ${recap.slippedCount===1?'task slipped':'tasks slipped'} past ${recap.slippedCount===1?'its':'their'} due date this week${recap.slippedTasks.length?': '+recap.slippedTasks.map(task=>task.title).join('; '):''}.`:'No overdue tasks were recorded for this week.';
+ return `Your weekly recap. You completed ${recap.tasksDone} ${recap.tasksDone===1?'task':'tasks'}. ${best} Your completion streak is ${recap.streak} ${recap.streak===1?'day':'days'}. ${slipped} One suggestion: ${recap.suggestion}`;
+}
+export function buildLocalRecap(tasks:RecapTask[],now:Date,timeZone:string,throughDate=calendarDay(now,timeZone)):Omit<WeeklyRecap,'id'|'kind'|'createdAt'|'updatedAt'>{
+ const weekStart=recapMonday(throughDate),today=calendarDay(now,timeZone);const counts=new Map<string,number>();
+ for(const task of tasks){if(task.status!=='done'||!task.completedAt)continue;const instant=new Date(task.completedAt);if(!Number.isFinite(instant.getTime())||instant>now)continue;const day=calendarDay(instant,timeZone);if(day<=throughDate)counts.set(day,(counts.get(day)||0)+1);}
+ const weekDays=[...counts.keys()].filter(day=>day>=weekStart&&day<=throughDate).sort();const tasksDone=weekDays.reduce((total,day)=>total+counts.get(day)!,0);const bestDay=weekDays.reduce<string|null>((best,day)=>!best||counts.get(day)!>counts.get(best)!?day:best,null);
+ let cursor=counts.has(throughDate)?throughDate:shiftRecapDay(throughDate,-1),streak=0;while(counts.has(cursor)&&streak<3650){streak++;cursor=shiftRecapDay(cursor,-1);}
+ const slipped=tasks.filter(task=>task.status!=='done'&&typeof task.date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(task.date)&&shiftRecapDay(task.date,0)===task.date&&task.date>=weekStart&&task.date<=throughDate&&task.date<today).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.id).localeCompare(String(b.id)));
+ return {weekStart,throughDate,timeZone,tasksDone,bestDay,bestDayCount:bestDay?counts.get(bestDay)!:0,streak,slippedCount:slipped.length,slippedTasks:slipped.slice(0,3).map(task=>({id:String(task.id),title:task.title.trim()?task.title.slice(0,200):'Untitled task'})),suggestion:recapSuggestion(tasksDone,slipped.length,streak)};
+}
+const validDay=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&shiftRecapDay(value,0)===value;
+export function weeklyRecap(row:any):WeeklyRecap{
+ const value={id:row?.id,weekStart:row?.week_start??row?.weekStart,throughDate:row?.through_date??row?.throughDate,timeZone:row?.time_zone??row?.timeZone,tasksDone:row?.tasks_done??row?.tasksDone,bestDay:row?.best_day??row?.bestDay??null,bestDayCount:row?.best_day_count??row?.bestDayCount,streak:row?.streak,slippedCount:row?.slipped_count??row?.slippedCount,slippedTasks:row?.slipped_tasks??row?.slippedTasks,suggestion:row?.suggestion,kind:row?.kind,createdAt:row?.created_at??row?.createdAt,updatedAt:row?.updated_at??row?.updatedAt};
+ if(!isSpaceId(value.id)||!validDay(value.weekStart)||recapMonday(value.weekStart)!==value.weekStart||!validDay(value.throughDate)||value.throughDate<value.weekStart||value.throughDate>shiftRecapDay(value.weekStart,6)||(value.bestDay!==null&&(!validDay(value.bestDay)||value.bestDay<value.weekStart||value.bestDay>value.throughDate))||!['manual','scheduled'].includes(value.kind)||!Number.isFinite(Date.parse(value.createdAt))||!Number.isFinite(Date.parse(value.updatedAt))||!Array.isArray(value.slippedTasks)||value.slippedTasks.length>3)throw new Error('Invalid weekly recap.');
+ for(const key of ['tasksDone','bestDayCount','streak','slippedCount'] as const)if(!Number.isSafeInteger(value[key])||value[key]<0)throw new Error('Invalid recap counts.');
+ return {...value,timeZone:spaceText(value.timeZone,100,'time zone'),suggestion:spaceText(value.suggestion,300,'suggestion'),slippedTasks:value.slippedTasks.map((task:any)=>({id:spaceText(String(task.id),100,'task ID'),title:spaceText(task.title,200,'task title')}))};
+}

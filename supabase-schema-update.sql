@@ -1395,3 +1395,84 @@ DO $$ BEGIN
 EXCEPTION WHEN insufficient_privilege THEN
  RAISE WARNING 'Focus Rooms Realtime setup was not applied: an authorized Supabase project administrator must apply this block to manage realtime.messages policies. Other migrations will continue. See docs/FOCUS_ROOMS.md.';
 END $$;
+
+-- Private weekly snapshots, one per Monday-based week; retain the newest eight.
+CREATE TABLE IF NOT EXISTS public.weekly_recap_preferences (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+ time_zone text NOT NULL DEFAULT 'UTC',enabled boolean NOT NULL DEFAULT true,next_due_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS public.weekly_recaps (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ week_start date NOT NULL CHECK(extract(isodow FROM week_start)=1),through_date date NOT NULL,
+ time_zone text NOT NULL,tasks_done integer NOT NULL CHECK(tasks_done>=0),best_day date,best_day_count integer NOT NULL CHECK(best_day_count>=0),streak integer NOT NULL CHECK(streak BETWEEN 0 AND 3650),
+ slipped_count integer NOT NULL CHECK(slipped_count>=0),slipped_tasks jsonb NOT NULL CHECK(jsonb_typeof(slipped_tasks)='array' AND jsonb_array_length(slipped_tasks)<=3),suggestion text NOT NULL CHECK(char_length(suggestion) BETWEEN 1 AND 300),
+ kind text NOT NULL CHECK(kind IN ('manual','scheduled')),created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(user_id,week_start),CHECK(through_date BETWEEN week_start AND week_start+6),CHECK(best_day IS NULL OR best_day BETWEEN week_start AND through_date)
+);
+CREATE INDEX IF NOT EXISTS weekly_recap_due_idx ON public.weekly_recap_preferences(next_due_at) WHERE enabled;
+CREATE INDEX IF NOT EXISTS weekly_recaps_recent_idx ON public.weekly_recaps(user_id,week_start DESC);
+DO $$ DECLARE tab text; BEGIN
+ FOREACH tab IN ARRAY ARRAY['weekly_recap_preferences','weekly_recaps'] LOOP
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',tab);
+  EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC,anon,authenticated',tab);
+  EXECUTE format('GRANT SELECT ON public.%I TO authenticated',tab);
+  EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.%I TO service_role',tab);
+  EXECUTE format('DROP POLICY IF EXISTS own_row ON public.%I',tab);
+  EXECUTE format('CREATE POLICY own_row ON public.%I FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id)',tab);
+ END LOOP;
+END $$;
+CREATE OR REPLACE FUNCTION public.configure_weekly_recaps(p_user_id uuid,p_time_zone text,p_enabled boolean DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE local_today date; upcoming_sunday date; due timestamptz; saved public.weekly_recap_preferences%ROWTYPE;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name=p_time_zone) THEN RAISE EXCEPTION 'Invalid time zone'; END IF;
+ local_today:=(now() AT TIME ZONE p_time_zone)::date;
+ upcoming_sunday:=local_today+(7-extract(isodow FROM local_today)::integer);
+ due:=(upcoming_sunday+time '18:00') AT TIME ZONE p_time_zone;
+ INSERT INTO public.weekly_recap_preferences(user_id,time_zone,enabled,next_due_at) VALUES(p_user_id,p_time_zone,coalesce(p_enabled,true),due)
+ ON CONFLICT(user_id) DO UPDATE SET time_zone=excluded.time_zone,enabled=coalesce(p_enabled,weekly_recap_preferences.enabled),
+ next_due_at=CASE WHEN weekly_recap_preferences.time_zone<>excluded.time_zone OR (p_enabled=true AND NOT weekly_recap_preferences.enabled) THEN excluded.next_due_at ELSE weekly_recap_preferences.next_due_at END RETURNING * INTO saved;
+ RETURN jsonb_build_object('timeZone',saved.time_zone,'enabled',saved.enabled,'nextDueAt',saved.next_due_at);
+END $$;
+CREATE OR REPLACE FUNCTION public.generate_weekly_recap(p_user_id uuid,p_automatic boolean DEFAULT false)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE pref public.weekly_recap_preferences%ROWTYPE; stamp timestamptz=now();today_local date;ending date;starting date;cutoff timestamptz;done_count integer;best date;best_count integer;streak_count integer;slipped integer;slipped_rows jsonb;advice text;saved public.weekly_recaps%ROWTYPE;
+BEGIN
+ SELECT * INTO pref FROM public.weekly_recap_preferences WHERE user_id=p_user_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Configure weekly recaps first'; END IF;
+ IF p_automatic AND (NOT pref.enabled OR pref.next_due_at>stamp) THEN RETURN NULL; END IF;
+ today_local:=(stamp AT TIME ZONE pref.time_zone)::date;
+ IF p_automatic THEN
+  ending:=today_local-(extract(isodow FROM today_local)::integer%7);
+  IF (ending+time '18:00') AT TIME ZONE pref.time_zone>stamp THEN ending:=ending-7; END IF;
+ ELSE ending:=today_local; END IF;
+ starting:=ending-(extract(isodow FROM ending)::integer-1);
+ cutoff:=least(stamp,((ending+1)::timestamp AT TIME ZONE pref.time_zone));
+ SELECT count(*) INTO done_count FROM public.tasks WHERE user_id=p_user_id AND status='done' AND completed_at>=(starting::timestamp AT TIME ZONE pref.time_zone) AND completed_at<cutoff;
+ SELECT (completed_at AT TIME ZONE pref.time_zone)::date,count(*)::integer INTO best,best_count FROM public.tasks WHERE user_id=p_user_id AND status='done' AND completed_at>=(starting::timestamp AT TIME ZONE pref.time_zone) AND completed_at<cutoff GROUP BY 1 ORDER BY 2 DESC,1 LIMIT 1;
+ WITH days AS(SELECT DISTINCT (completed_at AT TIME ZONE pref.time_zone)::date AS day FROM public.tasks WHERE user_id=p_user_id AND status='done' AND completed_at<cutoff AND completed_at>cutoff-interval '3652 days'),
+ ordered AS(SELECT day,row_number() OVER(ORDER BY day DESC) AS n FROM days),latest AS(SELECT max(day) AS day FROM days)
+ SELECT least(3650,count(*))::integer INTO streak_count FROM ordered,latest WHERE latest.day>=ending-1 AND latest.day-ordered.day=ordered.n-1;
+ -- Source due dates are text; lexical comparison is safe only for canonical dates.
+ SELECT count(*) INTO slipped FROM public.tasks t WHERE t.user_id=p_user_id AND t.status<>'done' AND t.date IN(SELECT (starting+n)::text FROM generate_series(0,6) AS days(n)) AND t.date>=starting::text AND t.date<=ending::text AND t.date<today_local::text;
+ SELECT coalesce(jsonb_agg(jsonb_build_object('id',entry.id,'title',left(coalesce(nullif(btrim(entry.title),''),'Untitled task'),200)) ORDER BY entry.date,entry.id),'[]'::jsonb) INTO slipped_rows FROM(SELECT id,title,date FROM public.tasks t WHERE t.user_id=p_user_id AND t.status<>'done' AND t.date IN(SELECT (starting+n)::text FROM generate_series(0,6) AS days(n)) AND t.date>=starting::text AND t.date<=ending::text AND t.date<today_local::text ORDER BY date,id LIMIT 3)entry;
+ advice:=CASE WHEN slipped>0 THEN 'Choose one slipped task and give it a smaller first step.' WHEN done_count=0 THEN 'Pick one small task for a ten-minute start.' WHEN streak_count>=5 THEN 'Keep your rhythm, and leave space for a proper break.' ELSE 'Protect a short focus block on your calendar next week.' END;
+ INSERT INTO public.weekly_recaps(user_id,week_start,through_date,time_zone,tasks_done,best_day,best_day_count,streak,slipped_count,slipped_tasks,suggestion,kind)
+ VALUES(p_user_id,starting,ending,pref.time_zone,done_count,best,coalesce(best_count,0),streak_count,slipped,slipped_rows,advice,CASE WHEN p_automatic THEN 'scheduled' ELSE 'manual' END)
+ ON CONFLICT(user_id,week_start) DO UPDATE SET through_date=excluded.through_date,time_zone=excluded.time_zone,tasks_done=excluded.tasks_done,best_day=excluded.best_day,best_day_count=excluded.best_day_count,streak=excluded.streak,slipped_count=excluded.slipped_count,slipped_tasks=excluded.slipped_tasks,suggestion=excluded.suggestion,kind=excluded.kind,updated_at=stamp RETURNING * INTO saved;
+ DELETE FROM public.weekly_recaps WHERE user_id=p_user_id AND id NOT IN(SELECT id FROM public.weekly_recaps WHERE user_id=p_user_id ORDER BY week_start DESC LIMIT 8);
+ IF p_automatic THEN UPDATE public.weekly_recap_preferences SET next_due_at=((ending+7)+time '18:00') AT TIME ZONE pref.time_zone WHERE user_id=p_user_id; END IF;
+ RETURN to_jsonb(saved)-'user_id';
+END $$;
+CREATE OR REPLACE FUNCTION public.run_due_weekly_recaps(p_limit integer DEFAULT 50)
+RETURNS integer LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE candidate record;processed integer=0;
+BEGIN
+ IF p_limit IS NULL OR p_limit<1 OR p_limit>100 THEN RAISE EXCEPTION 'Invalid recap batch size'; END IF;
+ FOR candidate IN SELECT user_id FROM public.weekly_recap_preferences WHERE enabled AND next_due_at<=now() ORDER BY next_due_at,user_id LIMIT p_limit FOR UPDATE SKIP LOCKED LOOP
+  PERFORM public.generate_weekly_recap(candidate.user_id,true);processed:=processed+1;
+ END LOOP;
+ RETURN processed;
+END $$;
+REVOKE ALL ON FUNCTION public.configure_weekly_recaps(uuid,text,boolean),public.generate_weekly_recap(uuid,boolean),public.run_due_weekly_recaps(integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.configure_weekly_recaps(uuid,text,boolean),public.generate_weekly_recap(uuid,boolean),public.run_due_weekly_recaps(integer) TO service_role;

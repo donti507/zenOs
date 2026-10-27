@@ -1,3 +1,4 @@
+import WeeklyRecap from '../components/WeeklyRecap';
 import {btn} from '../components/ui/kit';
 import SpaceWidgets from '../components/SpaceWidgets';
 import SnapSyllabus from '../components/SnapSyllabus';
@@ -185,6 +186,7 @@ export default function Home() {
         </div>
       </motion.section>
 
+      <WeeklyRecap key={user?.id||'local'} />
       <SpaceWidgets />
       <PostponedTasks />
 
