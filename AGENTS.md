@@ -135,6 +135,8 @@ Billing state/actions go through `useZenos()`. Account menus show Upgrade to Pro
 ## Workspace Realtime
 `src/lib/workspaceRealtime.ts` shares cloud row mapping and duplicate-safe change merging. ZenosContext subscribes to a single private `zenos:workspace:<user UUID>` Broadcast channel only for a loaded signed-in cloud account; it removes that channel on sign-out/account/local-mode changes and ignores late callbacks/reads. Source-table triggers and scoped receive/publisher policies in the SQL migration authorize only that user's rows, including DELETE (Postgres Changes cannot filter deletes). Never replace this with a global/unfiltered delete feed or enable client publishing on this topic prefix.
 
+Supabase owns `realtime.messages`; skip ALTER TABLE when RLS is already enabled. If the migration role cannot manage its policies, the entire Realtime policy/trigger block rolls back and warns while later app migrations continue. Realtime remains pending until an authorized project administrator applies the block; never install publishers without the matching isolation policies or change managed-table ownership. See docs/REALTIME.md for troubleshooting.
+
 On channel join/rejoin, reconcile only the four workspace tables and replay broadcasts received during the read. Preserve chat/UI state, task field mappings/completion history and idempotent mutation responses; local mode stays independent. Apply the SQL migration and enable Supabase Realtime before live testing; see docs/REALTIME.md.
 
 ## Dante long-term memory

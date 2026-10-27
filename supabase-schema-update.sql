@@ -438,7 +438,11 @@ BEGIN
   IF to_regprocedure('realtime.broadcast_changes(text,text,text,text,text,record,record,text)') IS NULL THEN
     RAISE EXCEPTION 'Supabase Realtime Broadcast database support must be enabled first';
   END IF;
-  ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+  -- Supabase owns this managed table and normally enables RLS already.
+  -- Avoid ALTER TABLE when it is unnecessary: the SQL Editor role may not own it.
+  IF NOT (SELECT relrowsecurity FROM pg_catalog.pg_class WHERE oid = 'realtime.messages'::regclass) THEN
+    ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+  END IF;
   DROP POLICY IF EXISTS zenos_workspace_receive ON realtime.messages;
   CREATE POLICY zenos_workspace_receive ON realtime.messages FOR SELECT TO authenticated
     USING (extension = 'broadcast' AND topic = 'zenos:workspace:' || (SELECT auth.uid())::text AND (SELECT realtime.topic()) = topic);
@@ -457,6 +461,10 @@ BEGIN
     EXECUTE format('DROP TRIGGER IF EXISTS zenos_workspace_broadcast ON public.%I', table_name);
     EXECUTE format('CREATE TRIGGER zenos_workspace_broadcast AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.broadcast_workspace_change()', table_name);
   END LOOP;
+EXCEPTION WHEN insufficient_privilege THEN
+  -- This subtransaction rolls back ALL policy/trigger changes together. Never
+  -- install publishers without their private-channel authorization policies.
+  RAISE WARNING 'Workspace Realtime setup was not applied: the SQL Editor role cannot manage realtime.messages. Other migrations will continue. Ask the Supabase project administrator to apply this Realtime block with an authorized role; see docs/REALTIME.md.';
 END;
 $$;
 
