@@ -3,7 +3,7 @@ import { useZenos } from "../context/ZenosContext";
 import type { SpaceSnapshot } from "../../shared/space";
 import { spaceBridgeData, spaceSrcdoc } from "../lib/spaceSandbox";
 import { btn } from "./ui/kit";
-export default function SpaceFrame({ snapshot, widgetSize }: { snapshot: SpaceSnapshot; widgetSize?: "small" | "medium" }) {
+export default function SpaceFrame({ snapshot, widgetSize, publicPreview = false }: { snapshot: SpaceSnapshot; widgetSize?: "small" | "medium"; publicPreview?: boolean }) {
   const { state, stateRef, googleEvents, user, checkSpaceAccess } = useZenos();
   const events = useRef(googleEvents);
   events.current = googleEvents;
@@ -16,7 +16,7 @@ export default function SpaceFrame({ snapshot, widgetSize }: { snapshot: SpaceSn
   const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const [reload, setReload] = useState(0);
   const [blocked, setBlocked] = useState(false);
-  const identity = `${user?.id}:${snapshot.page.id}:${snapshot.version.id}:${snapshot.page.updatedAt}:${snapshot.page.permissions.tasks}:${snapshot.page.permissions.events}:${state.theme}:${reload}`;
+  const identity = `${publicPreview}:${user?.id}:${snapshot.page.id}:${snapshot.version.id}:${snapshot.page.updatedAt}:${snapshot.page.permissions.tasks}:${snapshot.page.permissions.events}:${state.theme}:${reload}`;
   const token = useMemo(() => crypto.randomUUID(), [identity]);
   const doc = useMemo(
     () => spaceSrcdoc(snapshot.version, token, state.theme === "dark"),
@@ -62,12 +62,12 @@ export default function SpaceFrame({ snapshot, widgetSize }: { snapshot: SpaceSn
       if (now - lastRequest.current.at > 1000)
         lastRequest.current = { at: now, count: 0 };
       const allowed =
-        active.snapshot.page.permissions[method as "tasks" | "events"];
+        !publicPreview && active.snapshot.page.permissions[method as "tasks" | "events"];
       if (++lastRequest.current.count > 10 || !allowed) {
         port.postMessage({
           ok: false,
           error: !allowed
-            ? "Grant this page permission in My Space first."
+            ? (publicPreview ? "Public gallery pages cannot access workspace data." : "Grant this page permission in My Space first.")
             : "Too many bridge requests. Try again shortly.",
         });
         port.close();
@@ -182,8 +182,7 @@ export default function SpaceFrame({ snapshot, widgetSize }: { snapshot: SpaceSn
         />
       )}
       <p className="text-xs text-on-surface-variant">
-        Private sandbox · No app, account or token access. Data access is off
-        unless you grant it in the page editor.
+        {publicPreview ? "Public sandbox · No app, account, token or workspace data access." : "Private sandbox · No app, account or token access. Data access is off unless you grant it in the page editor."}
       </p>
     </section>
   );

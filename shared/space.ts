@@ -8,7 +8,9 @@ export const SPACE_LIMITS = {
 } as const;
 export type SpaceCode = { html: string; css: string; js: string };
 export type SpacePermissions = { tasks: boolean; events: boolean };
+export type RemixCredit = {id:string;title:string;author:string;original?:{id:string;title:string;author:string}};
 export type SpacePage = {
+  remixSource?: RemixCredit | null;
   id: string;
   slug: string;
   title: string;
@@ -97,6 +99,7 @@ export function spacePageFromRow(value: any): SpacePage {
     title: spaceText(value.title, 80, "page title"),
     dashboardSize: ["small", "medium"].includes(value.dashboard_size ?? value.dashboardSize) ? (value.dashboard_size ?? value.dashboardSize) : null,
     dashboardOrder: Number.isSafeInteger(value.dashboard_order ?? value.dashboardOrder) ? (value.dashboard_order ?? value.dashboardOrder) : 0,
+    remixSource: remixCredit(value.remix_source ?? value.remixSource),
     currentVersionId: version,
     permissions: spacePermissions(value.permissions),
     createdAt: created,
@@ -169,4 +172,12 @@ export function arrangeSpaceWidgets(pages: SpacePage[], id: string, action: Spac
     dashboardSize: page.id === id ? action === "unpin" ? null : action === "small" || action === "medium" ? action : page.dashboardSize : page.dashboardSize,
     dashboardOrder: Math.max(0,pinned.findIndex(item => item.id === page.id)),
   }));
+}
+
+export function remixCredit(value:any):RemixCredit|null {
+ if(value==null)return null;
+ if(!isSpaceId(value.id))throw new Error('Invalid remix credit.');
+ const credit:RemixCredit={id:value.id,title:spaceText(value.title,80,'original title'),author:spaceText(value.author,40,'original author')};
+ if(value.original!=null){if(!isSpaceId(value.original.id))throw new Error('Invalid original credit.');credit.original={id:value.original.id,title:spaceText(value.original.title,80,'original title'),author:spaceText(value.original.author,40,'original author')};}
+ return credit;
 }

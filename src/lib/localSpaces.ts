@@ -1,5 +1,7 @@
 import {
   arrangeSpaceWidgets,
+  spaceCode,
+  remixCredit,
   initialSpaceCode,
   noSpacePermissions,
   spacePageFromRow,
@@ -218,6 +220,7 @@ export async function createLocalSpace(
   slug: string,
   title: string,
   versionId: string,
+  remix?: {code:import("../../shared/space").SpaceCode;credit:import("../../shared/space").RemixCredit},
 ) {
   // Slug collision check and creation must share the same transaction.
   const db = await open();
@@ -239,18 +242,20 @@ export async function createLocalSpace(
             id,
             slug,
             title,
+            remixSource: remix ? remixCredit(remix.credit) : null,
             currentVersionId: versionId,
             permissions: noSpacePermissions(),
             createdAt,
             updatedAt: createdAt,
           });
           const version: SpaceVersion = {
-            ...initialSpaceCode,
+            ...(remix ? spaceCode(remix.code) : initialSpaceCode),
             id: versionId,
             pageId: id,
             kind: "initial",
             prompt: "",
             reply: "",
+            explanation: remix ? "Copied a public gallery page into your private space with credit to its author." : "",
             model: "",
             restoredFrom: null,
             createdAt,

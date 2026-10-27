@@ -1,3 +1,4 @@
+import { useGallery } from '../hooks/useGallery';
 import { useModelArena } from '../hooks/useModelArena';
 import { useSpacePages } from '../hooks/useSpacePages';
 import { useSemanticSearch } from '../hooks/useSemanticSearch';
@@ -97,7 +98,7 @@ const compact = (o: Record<string, any>) => Object.fromEntries(Object.entries(o)
 
 export type NewMeeting = Omit<Meeting, 'id' | 'createdAt'>;
 
-interface ZenosContextType {
+interface ZenosContextType extends ReturnType<typeof useGallery> {
   focusSession: FocusSession | null;
   startTaskFocus: (taskId: Task['id']) => void;
   stopTaskFocus: () => void;
@@ -282,6 +283,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const lectures = useLectures({ ownerId: user?.id ?? null, isOffline, stateRef, setState, isCurrent: () => !!userRef.current && userRef.current.id === user?.id && offlineRef.current === isOffline && workspaceOwner.current === (isOffline ? null : user?.id) });
   const arena = useModelArena({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const spaces = useSpacePages({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
+  const gallery = useGallery({ownerId:user?.id??null,isOffline,getToken:getAuthToken,refreshSpacePages:spaces.refreshSpacePages,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const semanticSearch = useSemanticSearch({ownerId:user?.id??null,isOffline,getToken:getAuthToken,state,stateRef,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const focus = useFocusTimer(user?.id || null);
   const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
@@ -1072,6 +1074,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         ...semanticSearch,
         ...spaces,
         ...arena,
+        ...gallery,
         focusSession: focus.focusSession,
         startTaskFocus: id => { const task = stateRef.current.tasks.find(t => t.id === id); if (task) focus.startFocus(task); },
         stopTaskFocus: focus.stopFocus,

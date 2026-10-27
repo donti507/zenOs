@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createGallery } from './server/gallery';
 import { createArena } from './server/arena';
 import { createSpaceEditor } from './server/space';
 import { createSemanticSearch } from './server/search';
@@ -40,6 +41,20 @@ async function startServer() {
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
 
+  const gallery=createGallery();
+  app.get('/api/gallery/status',gallery.status);
+  app.get('/api/gallery/account',requireUser,gallery.signed,gallery.noCache,gallery.account);
+  app.get('/api/gallery/admin',requireUser,gallery.signed,gallery.noCache,gallery.admin,gallery.adminList);
+  app.get('/api/gallery/admin/:id',requireUser,gallery.signed,gallery.noCache,gallery.admin,gallery.adminDetail);
+  app.post('/api/gallery/admin/:id',requireUser,gallery.signed,rateLimit,gallery.noCache,gallery.admin,gallery.moderate);
+  app.get('/api/gallery/mine/:id',requireUser,gallery.signed,gallery.noCache,gallery.mine);
+  app.post('/api/gallery/publish',requireUser,gallery.signed,rateLimit,gallery.noCache,gallery.publish);
+  app.post('/api/gallery/:id/withdraw',requireUser,gallery.signed,rateLimit,gallery.noCache,gallery.withdraw);
+  app.post('/api/gallery/:id/report',requireUser,gallery.signed,rateLimit,gallery.noCache,gallery.report);
+  app.post('/api/gallery/:id/remix',requireUser,gallery.signed,rateLimit,gallery.noCache,gallery.remix);
+  app.get('/api/gallery/:id/tree',gallery.noCache,gallery.tree);
+  app.get('/api/gallery/:id',gallery.noCache,gallery.detail);
+  app.get('/api/gallery',gallery.noCache,gallery.list);
   const arena=createArena();
   app.get('/api/space/arena/status',arena.status);
   app.post('/api/space/arena/compare',requireUser,rateLimit,arena.prepare,daily.count('messages',2),arena.compare);

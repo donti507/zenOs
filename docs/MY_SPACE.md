@@ -1,10 +1,10 @@
 # My Space
 
-Open **My Space** (`/space`) to create a private page with a title and a lowercase, hyphen-separated address. Pages live at `/space/:slug`, appear in the desktop sidebar and are available from the mobile Space tab. A slug belongs to an account: another account can use the same slug without seeing your page. There is no public/sharing route.
+Open **My Space** (`/space`) to create a private page with a title and a lowercase, hyphen-separated address. Pages live at `/space/:slug`, appear in the desktop sidebar and are available from the mobile Space tab. A slug belongs to an account: another account can use the same slug without seeing your page. Pages remain private unless you explicitly publish a snapshot to the public gallery.
 
 Describe an edit in **Build with AI**, choose a permitted model and send it. Each completed edit stores a full HTML/CSS/JS snapshot and the request/reply as a save point. Refresh recovers an edit whose response was interrupted. Retrying the same completed edit reuses its request ID without another provider call or quota reservation. Local drafts survive a failed IndexedDB save in memory so Retry can save without regenerating; leaving/reloading before that save loses the unsaved draft.
 
-The timeline loads 30 versions at a time and **Load older versions** reaches the entire history. Restore adds a new save point with the selected old code; it does not erase later history. Restoring and every AI edit turn data permissions off. Concurrent stale edits/restores/grants fail rather than overwriting another device's new version. Page title/address metadata is fixed after creation in this release; AI edits change the page's rendered contents. Page deletion/renaming and public sharing are not included.
+The timeline loads 30 versions at a time and **Load older versions** reaches the entire history. Restore adds a new save point with the selected old code; it does not erase later history. Restoring and every AI edit turn data permissions off. Concurrent stale edits/restores/grants fail rather than overwriting another device's new version. Page title/address metadata is fixed after creation in this release; AI edits change the page's rendered contents. Private-page deletion/renaming are not included. Opt-in public snapshots are described in [Gallery setup](GALLERY.md).
 
 ## Setup
 
@@ -74,3 +74,7 @@ On Home (including pinned widgets), `/space` without a selected page, or other a
 ## Model Arena tab
 
 Choose **Model Arena** beside **My pages** to send the same prompt to two allowed models, see both answers stream side by side, vote once, and view a leaderboard based only on your votes. Comparisons consume two daily messages when limits apply. This does not edit a personal page or execute generated answers. See [Model Arena setup](MODEL_ARENA.md).
+
+## Publish and remix
+
+Use **Page menu → Publish to gallery** to choose public metadata, review the selected version and explicitly allow public viewing/remixing with credit. Later edits remain private until published again. **Unpublish** withdraws the public snapshot; existing remixes remain independent. **Gallery** links open public pages in the same sandbox with the workspace-data bridge permanently disabled. Remix copies code into a private page with no grants and credit to the original author, including in local mode. Reports and verified-email moderator controls are documented in [GALLERY.md](GALLERY.md).

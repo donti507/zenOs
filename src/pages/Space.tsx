@@ -6,6 +6,7 @@ import {
   type SpaceVersionInfo,
   noSpacePermissions,
 } from "../../shared/space";
+import PublishSpace from "../components/PublishSpace";
 import ModelArena from "../components/ModelArena";
 import SpaceLearn from "../components/SpaceLearn";
 import SpaceFrame from "../components/SpaceFrame";
@@ -46,6 +47,7 @@ export default function Space() {
     restoreSpaceVersion,
     setSpacePermissions,
   } = useZenos();
+  const [publishOpen,setPublishOpen]=useState(false);
   const [learnMode, setLearnMode] = useState(false);
   const [learnVersion, setLearnVersion] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<SpaceSnapshot | null>(null);
@@ -112,6 +114,7 @@ export default function Space() {
     setError("");
     setPrompt("");
     setPermissionOpen(false);
+    setPublishOpen(false);
     setRestore(null);
     setMore(false);
     if (!slug) {
@@ -275,6 +278,7 @@ export default function Space() {
     });
   const tabs = <nav aria-label="My Space tabs" className="flex flex-wrap gap-2">
     <Link className={arenaTab ? btn.secondary : btn.solid} to="/space" aria-current={!arenaTab ? 'page' : undefined}>My pages</Link>
+    <Link className={btn.secondary} to="/gallery">Gallery</Link>
     <Link className={arenaTab ? btn.solid : btn.secondary} to="/space?tab=arena" aria-current={arenaTab ? 'page' : undefined}>Model Arena</Link>
   </nav>;
   if (arenaTab) return <div className="min-w-0 space-y-5"><PageHeader title="My Space" subtitle="Compare models with your own prompts."/>{tabs}<ModelArena/></div>;
@@ -303,6 +307,7 @@ export default function Space() {
         {snapshot && <details className="relative">
           <summary className={`${btn.secondary} cursor-pointer`}>Page menu</summary>
           <div className={`${card} absolute z-10 mt-2 p-3 min-w-52 space-y-2`}>
+            <button className={btn.secondary} disabled={busy} onClick={()=>setPublishOpen(true)}>Publish to gallery</button>
             {spacePages.find(page => page.id === snapshot.page.id)?.dashboardSize ?
               <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"unpin"))}>Unpin from Home</button> :
               <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"small"))}>Pin to Home</button>}
@@ -422,6 +427,7 @@ export default function Space() {
         <>
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px] gap-6 items-start">
             <div className="min-w-0 space-y-5">
+              {snapshot.page.remixSource&&<p className="text-sm text-on-surface-variant break-words">Remixed from <Link className="text-primary underline" to={`/gallery/${snapshot.page.remixSource.id}`}>{snapshot.page.remixSource.title}</Link> by {snapshot.page.remixSource.author}.{snapshot.page.remixSource.original&&<> Originally by <Link className="text-primary underline" to={`/gallery/${snapshot.page.remixSource.original.id}`}>{snapshot.page.remixSource.original.author}</Link>.</>}</p>}
               <SpaceFrame snapshot={snapshot} />
               {learnMode && <SpaceLearn pageId={snapshot.page.id} versionId={learnVersion || snapshot.version.id} />}
               <section
@@ -635,6 +641,7 @@ export default function Space() {
           text="Choose one of your pages or create a new one."
         />
       ) : null}
+      {publishOpen&&snapshot&&<PublishSpace snapshot={snapshot} onClose={()=>setPublishOpen(false)}/>}
       <Modal
         open={permissionOpen}
         onClose={() => !busy && setPermissionOpen(false)}
