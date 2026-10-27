@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added signed-in Focus Rooms with invite links, private Supabase Realtime Presence, server-synced host-controlled 25/5 timers, canonical completion streaks, multi-tab deduplication, 24-hour inactivity expiry and SQL/API/client regression tests; apply the migration and enable private Realtime. (Codex)
+
 - 2026-10-27: Added admin-created build challenges, owned published-page submissions, confirmed one-vote-per-challenge voting, deadline/tie-aware winner awards, permanent creation/remix/streak badges in account menus, separate local badges, service-only transactional writes and regression tests; apply the migration. (Codex)
 
 - 2026-10-27: Added opt-in public My Space snapshots, sandboxed gallery viewing without data access, credited cloud/local remixes and lineage, duplicate-safe three-report hiding, verified-email admin moderation and title/description filters; added SQL/API/UI/privacy tests and setup documentation. Apply the migration and configure ADMIN_EMAILS. (Codex)

@@ -17,6 +17,7 @@ const Tasks = lazy(() => import('./pages/Tasks'));
 const Kanban = lazy(() => import('./pages/Board'));
 const Calendar = lazy(() => import('./pages/Calendar'));
 const Meetings = lazy(() => import('./pages/Meetings'));
+const FocusRooms = lazy(() => import('./pages/FocusRooms'));
 const Challenges = lazy(() => import('./pages/Challenges'));
 const Gallery = lazy(() => import('./pages/Gallery'));
 const Space = lazy(() => import('./pages/Space'));
@@ -67,6 +68,8 @@ export function AppRoutes() {
         <Route path="tasks" element={<Tasks />} />
         <Route path="board" element={<Kanban />} />
         <Route path="calendar" element={<Calendar />} />
+        <Route path="focus-rooms" element={<FocusRooms key={`${user.id}:${isOffline}:${pathname}`} />} />
+        <Route path="focus-rooms/:id" element={<FocusRooms key={`${user.id}:${isOffline}:${pathname}`} />} />
         <Route path="meetings" element={<Meetings />} />
         <Route path="space" element={<Space />} />
         <Route path="space/:slug" element={<Space />} />
