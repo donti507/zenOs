@@ -35,7 +35,7 @@ function MeetLink({ url }: { url: string }) {
 export default function Modals() {
   const {
     state, showModal, setShowModal, editTaskId, setEditTaskId, addTask, editTask, deleteTask,
-    addCategory, updateState, addMeeting, fetchGoogleEvents, accessToken, canAskNotifications, enableTaskNotifications, notificationPermission,
+    addCategory, updateState, addMeeting, fetchGoogleEvents, googleConnected, getGoogleAccessToken, canAskNotifications, enableTaskNotifications, notificationPermission,
   } = useZenos();
 
   const close = () => {
@@ -108,11 +108,11 @@ export default function Modals() {
   const scheduleMeeting = async () => {
     if (!meet.title.trim() || !meet.date) return setMeetError('Add a title and a date.');
     if (meet.endTime <= meet.startTime) return setMeetError('The end time must be after the start time.');
-    if (!accessToken) return setMeetError('Connect Google Calendar first (sign in with Google).');
+    if (!googleConnected) return setMeetError('Connect Google Calendar first (sign in with Google).');
     setScheduling(true);
     setMeetError('');
     try {
-      const ev = await createGoogleCalendarEvent(accessToken, {
+      const ev = await createGoogleCalendarEvent(getGoogleAccessToken, {
         summary: meet.title.trim(),
         description: meet.description,
         date: meet.date,
@@ -298,7 +298,7 @@ export default function Modals() {
           </div>
         ) : (
           <>
-            {!accessToken && (
+            {!googleConnected && (
               <div className="p-3 rounded-lg bg-warning-container text-on-surface text-[13px] flex gap-2">
                 <Icon name="info" className="text-[18px] text-warning" />Sign in with Google to create calendar events with a Meet link.
               </div>

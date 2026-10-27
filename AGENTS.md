@@ -61,10 +61,10 @@ Client sends `{messages, context}` to `POST /api/dante` → server builds the sy
 Supported: `create_task, complete_task, reopen_task, update_task, add_task_steps, create_meeting, switch_view, filter_category`. `context.mode = "voice"` makes replies short and speakable.
 
 ## Environment (.env)
-`LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY`. See `.env.example`.
+`LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET`. See `.env.example`.
 
 ## Known gaps / next work
-See `docs/ROADMAP.md`. Google Calendar token expires hourly. Optional Stripe subscriptions are documented in docs/BILLING.md.
+See `docs/ROADMAP.md`. Persistent Google Calendar access is documented in docs/GOOGLE_CALENDAR.md. Optional Stripe subscriptions are documented in docs/BILLING.md.
 
 ## Working with two AI agents
 - Each task = its own git branch (`feat/…`, `fix/…`). Never let two agents edit the same branch at once.
@@ -126,3 +126,8 @@ Task.examPlan stores plan ID, exam name/date, daily budget and stable topic ID; 
 `server/billing.ts` owns optional Stripe Checkout, portal, signature-verified raw webhooks and server-side plan lookup. Server-only `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, Supabase URL and `SUPABASE_SERVICE_ROLE_KEY` are required to enable billing. `BILLING_APP_URL` optionally overrides the trusted redirect origin (default https://zenose.tech). Never use VITE_ Stripe secrets. Apply the updated SQL migration before enabling billing: `profiles` allows own-row SELECT only; service-role-only writes and `apply_stripe_billing_event` enforce atomic event receipts, ordering and optimistic concurrency. Only current Stripe subscriptions for the configured price grant Pro; browser returns/metadata/client plan claims never do. Pro bypasses daily Dante limits, preserving authentication and per-minute limits. Disabled billing and local mode preserve the existing workflow.
 
 Billing state/actions go through `useZenos()`. Account menus show Upgrade to Pro or Manage subscription, and free customers retain portal access. Lazy `/billing/upgrade`, `/billing/success`, `/billing/cancel` pages are account flows rather than primary navigation; success polls server activation. See docs/BILLING.md for Stripe setup, test/live separation and account deletion/cancellation responsibilities.
+
+## Persistent Google Calendar
+`server/google.ts` owns authenticated `POST /api/google/connect`, `POST /api/google/token`, and `DELETE /api/google/token`. The private `google_tokens` table is service-role-only, with **no client RLS policies, not even SELECT**; this is an intentional exception to the general own-row policy rule. Apply the migration and set server-only GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET matching Supabase's Google OAuth client, plus SUPABASE_SERVICE_ROLE_KEY. Never return/log provider refresh tokens or secrets. Disconnect deletes stored access, not Google events or the Google OAuth grant.
+
+`useGoogleCalendar` manages only in-memory access tokens, explicit consent transfer, server restoration, expiry and in-flight/account-change guards through ZenosContext. Calendar clients use `getGoogleAccessToken` rather than a captured token for reads/writes, and gate UI on `googleConnected`. A definitive Google 401 is retried once after refresh; no automatic retries of uncertain writes. Local mode makes no Google token requests. Existing users reconnect once for offline consent; Google OAuth Testing-mode tokens may expire after seven days. See docs/GOOGLE_CALENDAR.md.

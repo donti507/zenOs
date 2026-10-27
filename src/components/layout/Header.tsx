@@ -19,7 +19,7 @@ const SUBTITLES: Record<string, string> = {
 };
 
 export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean }) {
-  const { state, updateState, toggleTheme, setShowModal, setShowBriefing, accessToken, fetchGoogleEvents, user, setLiveOpen, logOut } = useZenos();
+  const { state, updateState, toggleTheme, setShowModal, setShowBriefing, googleConnected, getGoogleAccessToken, fetchGoogleEvents, user, setLiveOpen, logOut } = useZenos();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const status = useDanteStatus();
@@ -52,12 +52,12 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
   };
 
   const instantMeet = async () => {
-    if (!accessToken || creatingMeet) return;
+    if (!googleConnected || creatingMeet) return;
     setCreatingMeet(true);
     try {
       const now = new Date();
       const end = new Date(now.getTime() + 60 * 60 * 1000);
-      const created = await createGoogleCalendarEvent(accessToken, {
+      const created = await createGoogleCalendarEvent(getGoogleAccessToken, {
         summary: 'Instant meeting (ZEN OS)',
         description: 'Instant meeting room created from ZEN OS.',
         date: localDateStr(now),
@@ -122,7 +122,7 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
           <span className="text-[13px] font-semibold">{status && !status.ready ? 'Dante offline' : 'Live'}</span>
         </button>
 
-        {accessToken && (
+        {googleConnected && (
           <button onClick={instantMeet} disabled={creatingMeet} aria-label="Start an instant meeting" title="Instant meeting"
             className="hidden sm:flex w-9 h-9 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer disabled:opacity-50">
             <span className="material-symbols-outlined text-[20px]">{creatingMeet ? 'progress_activity' : 'video_call'}</span>

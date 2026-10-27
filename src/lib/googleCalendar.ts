@@ -1,30 +1,37 @@
-// Helper utilities for interacting directly with the Google Calendar API client-side
+// The short-lived token is supplied on demand; refresh credentials stay on the server.
+export type GoogleTokenSource = string | ((forceRefresh?: boolean) => Promise<string>);
+export class GoogleCalendarError extends Error {
+  constructor(public status: number) {
+    super(status === 401 || status === 403 ? 'Reconnect Google Calendar and allow Calendar access.' : 'Google Calendar is temporarily unavailable. Please try again.');
+  }
+}
+async function googleRequest(source: GoogleTokenSource, url: string, options: RequestInit = {}) {
+  const send = async (force = false) => {
+    const token = typeof source === 'function' ? await source(force) : source;
+    return fetch(url, { ...options, headers: { ...options.headers, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
+  };
+  let response = await send();
+  // A definitive 401 did not perform a write; retry exactly once with a fresh token.
+  if (response.status === 401 && typeof source === 'function') response = await send(true);
+  if (!response.ok) throw new GoogleCalendarError(response.status);
+  return response;
+}
 
-export async function fetchGoogleCalendarEvents(accessToken: string, year: number, month: number) {
+export async function fetchGoogleCalendarEvents(accessToken: GoogleTokenSource, year: number, month: number) {
   // Construct the month date bounds
   const startDate = new Date(year, month, 1, 0, 0, 0).toISOString();
   const endDate = new Date(year, month + 1, 1, 0, 0, 0).toISOString();
 
   const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(startDate)}&timeMax=${encodeURIComponent(endDate)}&singleEvents=true&orderBy=startTime&maxResults=250`;
   
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  if (!res.ok) {
-    console.error('Fetch Google Calendar items failed', res.statusText);
-    throw new Error('Unauthorized or expired Google session');
-  }
+  const res = await googleRequest(accessToken, url);
 
   const data = await res.json();
   return data.items || [];
 }
 
 export async function createGoogleCalendarEvent(
-  accessToken: string, 
+  accessToken: GoogleTokenSource,
   eventData: {
     summary: string;
     description: string;
@@ -64,20 +71,7 @@ export async function createGoogleCalendarEvent(
   }
 
   const url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1';
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errorBody = await res.text();
-    console.error('Google Calendar create event failed:', errorBody);
-    throw new Error('Failed to create calendar event');
-  }
+  const res = await googleRequest(accessToken, url, { method: 'POST', body: JSON.stringify(body) });
 
   const createdEvent = await res.json();
   return createdEvent;

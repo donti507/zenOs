@@ -11,9 +11,11 @@ type Item = { key: string; taskId?: string | number; kind: 'task' | 'meeting' | 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function Calendar() {
-  const { state, updateState, googleEvents, loadingEvents, accessToken, isOffline, loginWithGoogle, setShowModal, setEditTaskId, toggleTaskDone } = useZenos();
+  const { state, updateState, googleEvents, loadingEvents, googleConnected, googleCalendarError, disconnectGoogleCalendar, isOffline, loginWithGoogle, setShowModal, setEditTaskId, toggleTaskDone } = useZenos();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectError, setDisconnectError] = useState('');
   const [view, setView] = useState<'month' | 'week'>('month');
   const [selected, setSelected] = useState(today());
   const { calYear, calMonth } = state;
@@ -92,7 +94,7 @@ export default function Calendar() {
     <div>
       <PageHeader
         title="Calendar"
-        subtitle={accessToken ? (loadingEvents ? 'Syncing Google Calendar…' : 'Tasks, meetings and Google Calendar in one place.') : 'Tasks and meetings by day.'}
+        subtitle={googleConnected ? (loadingEvents ? 'Syncing Google Calendar…' : 'Tasks, meetings and Google Calendar in one place.') : 'Tasks and meetings by day.'}
         actions={
           <>
             <SnapSyllabus /><ExamPlanner />
@@ -102,7 +104,17 @@ export default function Calendar() {
         }
       />
 
-      {!accessToken && !isOffline && (
+      {googleConnected && !isOffline && <div className="mb-5 flex flex-col sm:flex-row sm:items-center gap-3">
+        <span className="text-sm text-on-surface-variant flex-1">Google Calendar connected</span>
+        <button className={`${btn.secondary} min-h-11`} disabled={disconnecting} onClick={async () => {
+          setDisconnecting(true); setDisconnectError('');
+          try { await disconnectGoogleCalendar(); } catch { setDisconnectError('Could not disconnect Google Calendar. Please try again.'); }
+          finally { setDisconnecting(false); }
+        }}>{disconnecting ? 'Disconnecting…' : 'Disconnect Google Calendar'}</button>
+      </div>}
+      {(googleCalendarError || disconnectError) && !isOffline && <p role="alert" className="text-error text-sm mb-4 break-words">{disconnectError || googleCalendarError}</p>}
+
+      {!googleConnected && !isOffline && (
         <div className={`${card} p-4 mb-5 flex flex-col sm:flex-row sm:items-center gap-3`}>
           <Icon name="event" className="text-[24px] text-secondary" />
           <div className="flex-1">
@@ -178,7 +190,7 @@ export default function Calendar() {
           <div className="flex flex-wrap gap-4 mt-4 text-[12px] text-on-surface-variant">
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-primary" />Tasks (by category)</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#8151eb' }} />Meetings</span>
-            {accessToken && <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#0e7fa3' }} />Google Calendar</span>}
+            {googleConnected && <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: '#0e7fa3' }} />Google Calendar</span>}
             <span className="hidden md:inline">Double-click a day to add a task.</span>
           </div>
         </section>
@@ -225,7 +237,7 @@ export default function Calendar() {
 
           <div className="grid grid-cols-2 gap-2 mt-4">
             <button className={btn.secondary} onClick={() => addOn(selected, 'addTask')}><Icon name="add_task" className="text-[18px]" />Task</button>
-            <button className={btn.secondary} onClick={() => (accessToken ? addOn(selected, 'scheduleMeeting') : navigate('/meetings'))}><Icon name="groups" className="text-[18px]" />Meeting</button>
+            <button className={btn.secondary} onClick={() => (googleConnected ? addOn(selected, 'scheduleMeeting') : navigate('/meetings'))}><Icon name="groups" className="text-[18px]" />Meeting</button>
           </div>
           <button
             className={`${btn.ghost} w-full mt-2 text-primary`}

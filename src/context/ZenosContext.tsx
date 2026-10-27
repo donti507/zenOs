@@ -11,6 +11,7 @@ import { today, localDateStr } from '../lib/utils';
 import { supabase, SUPABASE_CONFIGURED } from '../lib/supabase';
 import { exportAccountData, deleteAccountData, downloadAccountData } from '../lib/accountData';
 import { shouldOfferLocalImport, declineLocalImport, importLocalData } from '../lib/localImport';
+import { useGoogleCalendar, GOOGLE_CONNECT_PENDING, type GoogleProviderSession } from '../hooks/useGoogleCalendar';
 import { fetchGoogleCalendarEvents } from '../lib/googleCalendar';
 
 export const OFFLINE_USER_ID = 'offline-user-123';
@@ -144,6 +145,10 @@ interface ZenosContextType {
   user: any | null;
   isOffline: boolean;
   accessToken: string | null;
+  googleConnected: boolean;
+  googleCalendarError: string | null;
+  getGoogleAccessToken: (forceRefresh?: boolean) => Promise<string>;
+  disconnectGoogleCalendar: () => Promise<void>;
   googleEvents: any[];
   setGoogleEvents: React.Dispatch<React.SetStateAction<any[]>>;
   loadingEvents: boolean;
@@ -206,9 +211,10 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const [editTaskId, setEditTaskId] = useState<number | string | null>(null);
 
   const [user, setUser] = useState<any | null>(null);
-  const [accessToken, setAccessTokenState] = useState<string | null>(null);
+  const [googleProviderSession, setGoogleProviderSession] = useState<GoogleProviderSession | null>(null);
   const [googleEvents, setGoogleEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [googleReadError, setGoogleReadError] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showBriefing, setShowBriefing] = useState(false);
@@ -224,6 +230,24 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   offlineRef.current = isOffline;
   const userRef = useRef(user);
   userRef.current = user;
+  const getAuthToken = useCallback(async () => {
+    if (!SUPABASE_CONFIGURED || userRef.current?.id === OFFLINE_USER_ID) return null;
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token ?? null;
+  }, []);
+  const { accessToken, googleConnected, googleCalendarError, getGoogleAccessToken, disconnectGoogleCalendar: disconnectGoogle } = useGoogleCalendar({ userId: user?.id ?? null, isOffline, getAuthToken, providerSession: googleProviderSession });
+  const googleReadRequest = useRef(0);
+  const disconnectGoogleCalendar = async () => {
+    ++googleReadRequest.current;
+    setGoogleEvents([]);
+    await disconnectGoogle();
+  };
+  const captureGoogleSession = (session: any) => {
+    // Only a deliberate Calendar consent flow uploads provider credentials.
+    let requested = false;
+    try { requested = sessionStorage.getItem(GOOGLE_CONNECT_PENDING) === 'true'; } catch { /* storage unavailable */ }
+    if (requested && session.provider_refresh_token && session.access_token) setGoogleProviderSession({ userId: session.user.id, refreshToken: session.provider_refresh_token, authToken: session.access_token });
+  };
   const focus = useFocusTimer(user?.id || null);
   const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
 
@@ -363,7 +387,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         const session = data?.session;
         if (session) {
           setUser(session.user);
-          if (session.provider_token) setAccessTokenState(session.provider_token);
+          captureGoogleSession(session);
           setIsLoadingData(true);
           await fetchUserData(session.user.id);
         }
@@ -381,7 +405,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       if (event === 'INITIAL_SESSION') return; // handled by init()
       if (session) {
         setUser(session.user);
-        if (session.provider_token) setAccessTokenState(session.provider_token);
+        captureGoogleSession(session);
         if (event === 'SIGNED_IN') {
           // Don't await inside the callback (supabase-js deadlock warning); defer it.
           setTimeout(async () => {
@@ -392,7 +416,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         }
       } else if (userRef.current?.id !== OFFLINE_USER_ID) {
         setUser(null);
-        setAccessTokenState(null);
+        setGoogleProviderSession(null);
         setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
       }
     });
@@ -413,25 +437,29 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   // ---------- Google Calendar ----------
   const fetchGoogleEvents = async () => {
-    const token = accessToken;
-    if (!token) return;
-    setLoadingEvents(true);
+    const owner = userRef.current?.id;
+    if (!owner || offlineRef.current || !googleConnected) return;
+    const request = ++googleReadRequest.current;
+    const { calYear, calMonth } = stateRef.current;
+    setLoadingEvents(true); setGoogleReadError(null);
     try {
-      const items = await fetchGoogleCalendarEvents(token, state.calYear, state.calMonth);
-      setGoogleEvents(items);
-    } catch (err) {
-      console.error('Failed to load Google Calendar events:', err);
-      if (err instanceof Error && err.message.toLowerCase().includes('unauthorized')) {
-        setAccessTokenState(null);
-      }
+      const items = await fetchGoogleCalendarEvents(getGoogleAccessToken, calYear, calMonth);
+      if (userRef.current?.id === owner && request === googleReadRequest.current && !offlineRef.current) setGoogleEvents(items);
+    } catch {
+      if (userRef.current?.id === owner && request === googleReadRequest.current) setGoogleReadError('Google Calendar could not sync. Try again or reconnect Calendar.');
+      // Never log Calendar responses or tokens.
     } finally {
-      setLoadingEvents(false);
+      if (request === googleReadRequest.current) setLoadingEvents(false);
     }
   };
 
   useEffect(() => {
-    if (accessToken) fetchGoogleEvents();
-  }, [accessToken, state.calYear, state.calMonth]);
+    ++googleReadRequest.current;
+    setGoogleEvents([]);
+    setLoadingEvents(false); setGoogleReadError(null);
+    if (googleConnected) void fetchGoogleEvents();
+    return () => { ++googleReadRequest.current; };
+  }, [user?.id, isOffline, googleConnected, state.calYear, state.calMonth]);
 
   /**
    * Sign in with Google. Plain sign-in only asks for name + email (no Google review needed).
@@ -439,6 +467,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
    */
   const loginWithGoogle = async (withCalendar = false) => {
     if (!SUPABASE_CONFIGURED) throw new Error('Google sign-in needs Supabase to be configured.');
+    if (withCalendar) {
+      try { sessionStorage.setItem(GOOGLE_CONNECT_PENDING, 'true'); } catch { throw new Error('Allow session storage to connect Google Calendar.'); }
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -451,7 +482,10 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
           : {}),
       },
     });
-    if (error) throw error;
+    if (error) {
+      if (withCalendar) sessionStorage.removeItem(GOOGLE_CONNECT_PENDING);
+      throw error;
+    }
   };
 
   const logOut = async () => {
@@ -464,7 +498,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       console.error('Sign-out failed:', error);
     } finally {
       setUser(null);
-      setAccessTokenState(null);
+      setGoogleProviderSession(null);
       setGoogleEvents([]);
       setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
     }
@@ -489,18 +523,12 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     // The deleted user's refresh token is no longer valid. Clear the local session.
     const { error } = await supabase.auth.signOut({ scope: 'local' });
     setUser(null);
-    setAccessTokenState(null);
+    setGoogleProviderSession(null);
     setGoogleEvents([]);
     setLiveOpen(false);
     setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
     if (error) throw new Error('Account deleted, but session cleanup failed. Please reload the page.');
   };
-
-  const getAuthToken = useCallback(async () => {
-    if (!SUPABASE_CONFIGURED || userRef.current?.id === OFFLINE_USER_ID) return null;
-    const { data } = await supabase.auth.getSession();
-    return data?.session?.access_token ?? null;
-  }, []);
 
   const [billingState, setBillingState] = useState<{ owner: string | null; enabled: boolean; plan: 'free' | 'pro'; hasCustomer?: boolean } | null>(null);
   const billingRequest = useRef(0);
@@ -898,6 +926,10 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         user,
         isOffline,
         accessToken,
+        googleConnected,
+        googleCalendarError: googleCalendarError || googleReadError,
+        getGoogleAccessToken,
+        disconnectGoogleCalendar,
         googleEvents,
         setGoogleEvents,
         loadingEvents,

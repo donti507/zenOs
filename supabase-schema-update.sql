@@ -394,3 +394,14 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.apply_stripe_billing_event(text,bigint,text,text,timestamptz,text,bigint) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.apply_stripe_billing_event(text,bigint,text,text,timestamptz,text,bigint) TO service_role;
+
+-- Google provider refresh tokens are server-only, including for the owning user.
+CREATE TABLE IF NOT EXISTS public.google_tokens (
+  user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  refresh_token text NOT NULL CHECK (length(refresh_token) > 0),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.google_tokens ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.google_tokens FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.google_tokens TO service_role;
+-- No browser-facing policies: requireUser endpoints access storage via service_role.

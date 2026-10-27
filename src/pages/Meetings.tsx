@@ -22,7 +22,7 @@ const restore = (): Saved | null => {
 };
 
 export default function Meetings() {
-  const { state, addMeeting, updateMeeting, deleteMeeting, setShowModal, accessToken } = useZenos();
+  const { state, addMeeting, updateMeeting, deleteMeeting, setShowModal, googleConnected } = useZenos();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
   const meetings = state.meetings || [];
@@ -124,7 +124,7 @@ export default function Meetings() {
         subtitle={`${upcoming.length} upcoming · ${totalMinutes} min logged`}
         actions={
           <>
-            {accessToken && <button className={btn.secondary} onClick={() => setShowModal('scheduleMeeting')}><Icon name="video_call" className="text-[18px]" />Google meeting</button>}
+            {googleConnected && <button className={btn.secondary} onClick={() => setShowModal('scheduleMeeting')}><Icon name="video_call" className="text-[18px]" />Google meeting</button>}
             <button className={btn.primary} onClick={() => setFormOpen(true)}><Icon name="add" className="text-[18px]" />New meeting</button>
           </>
         }
