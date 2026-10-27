@@ -1232,3 +1232,166 @@ DROP TRIGGER IF EXISTS space_creation_badges ON public.space_pages;
 CREATE TRIGGER space_creation_badges AFTER INSERT ON public.space_pages FOR EACH ROW EXECUTE FUNCTION public.award_space_creation_badges();
 INSERT INTO public.space_badges(user_id,badge) SELECT DISTINCT user_id,'first_page' FROM public.space_pages ON CONFLICT(user_id,badge) DO NOTHING;
 INSERT INTO public.space_badges(user_id,badge) SELECT DISTINCT user_id,'first_remix' FROM public.space_pages WHERE remix_source IS NOT NULL ON CONFLICT(user_id,badge) DO NOTHING;
+
+-- Signed-in, invite-link Focus Rooms. Browser writes go only through verified APIs.
+CREATE TABLE IF NOT EXISTS public.focus_rooms (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ title text NOT NULL CHECK(char_length(btrim(title)) BETWEEN 1 AND 80),
+ started_at timestamptz, elapsed_seconds double precision NOT NULL DEFAULT 0 CHECK(elapsed_seconds>=0 AND elapsed_seconds<'Infinity'::float8),
+ revision bigint NOT NULL DEFAULT 0 CHECK(revision>=0),
+ last_active_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.focus_room_members (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ room_id uuid NOT NULL REFERENCES public.focus_rooms(id) ON DELETE CASCADE,
+ name text NOT NULL CHECK(char_length(btrim(name)) BETWEEN 1 AND 40), time_zone text NOT NULL DEFAULT 'UTC',
+ UNIQUE(room_id,user_id)
+);
+CREATE TABLE IF NOT EXISTS public.focus_room_sessions (
+ id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ room_id uuid NOT NULL REFERENCES public.focus_rooms(id) ON DELETE CASCADE,
+ last_seen_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS focus_rooms_owner_idx ON public.focus_rooms(user_id);
+CREATE INDEX IF NOT EXISTS focus_room_members_owner_idx ON public.focus_room_members(user_id);
+CREATE INDEX IF NOT EXISTS focus_room_sessions_owner_idx ON public.focus_room_sessions(user_id);
+CREATE INDEX IF NOT EXISTS focus_room_sessions_room_idx ON public.focus_room_sessions(room_id,last_seen_at);
+DO $$ DECLARE tab text; BEGIN
+ FOREACH tab IN ARRAY ARRAY['focus_rooms','focus_room_members','focus_room_sessions'] LOOP
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',tab);
+  EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC,anon,authenticated',tab);
+  EXECUTE format('GRANT SELECT ON public.%I TO authenticated',tab);
+  EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.%I TO service_role',tab);
+  EXECUTE format('DROP POLICY IF EXISTS own_row ON public.%I',tab);
+  EXECUTE format('CREATE POLICY own_row ON public.%I FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id)',tab);
+ END LOOP;
+END $$;
+CREATE OR REPLACE FUNCTION public.create_focus_room(p_user_id uuid,p_id uuid,p_title text)
+RETURNS uuid LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE saved public.focus_rooms%ROWTYPE;
+BEGIN
+ PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('focus-create:'||p_user_id::text,0));
+ SELECT * INTO saved FROM public.focus_rooms WHERE id=p_id;
+ IF FOUND THEN
+  IF saved.user_id<>p_user_id OR saved.title<>p_title OR saved.last_active_at<=now()-interval '24 hours' THEN RAISE EXCEPTION 'Room unavailable'; END IF;
+  RETURN saved.id;
+ END IF;
+ IF (SELECT count(*) FROM public.focus_rooms WHERE user_id=p_user_id AND last_active_at>now()-interval '24 hours')>=10 THEN RAISE EXCEPTION 'Ten active rooms per creator'; END IF;
+ INSERT INTO public.focus_rooms(id,user_id,title) VALUES(p_id,p_user_id,p_title);RETURN p_id;
+END $$;
+CREATE OR REPLACE FUNCTION public.enter_focus_room(p_user_id uuid,p_id uuid,p_session_id uuid,p_name text,p_time_zone text)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE saved public.focus_rooms%ROWTYPE;
+BEGIN
+ SELECT * INTO saved FROM public.focus_rooms WHERE id=p_id FOR UPDATE;
+ IF NOT FOUND OR saved.last_active_at<=now()-interval '24 hours' THEN RAISE EXCEPTION 'Room unavailable'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name=p_time_zone) THEN RAISE EXCEPTION 'Invalid time zone'; END IF;
+ DELETE FROM public.focus_room_sessions WHERE room_id=p_id AND last_seen_at<=now()-interval '120 seconds';
+ IF (SELECT count(DISTINCT user_id) FROM public.focus_room_sessions WHERE room_id=p_id AND user_id<>p_user_id)>=50 THEN RAISE EXCEPTION 'Room is full'; END IF;
+ IF (SELECT count(*) FROM public.focus_room_sessions WHERE room_id=p_id AND user_id=p_user_id AND id<>p_session_id)>=3 THEN RAISE EXCEPTION 'Three tabs per member'; END IF;
+ INSERT INTO public.focus_room_members(user_id,room_id,name,time_zone) VALUES(p_user_id,p_id,p_name,p_time_zone)
+ ON CONFLICT(room_id,user_id) DO UPDATE SET name=excluded.name,time_zone=excluded.time_zone;
+ INSERT INTO public.focus_room_sessions(id,user_id,room_id) VALUES(p_session_id,p_user_id,p_id)
+ ON CONFLICT(id) DO UPDATE SET last_seen_at=now() WHERE focus_room_sessions.user_id=p_user_id AND focus_room_sessions.room_id=p_id;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Session unavailable'; END IF;
+ UPDATE public.focus_rooms SET last_active_at=now() WHERE id=p_id;
+END $$;
+CREATE OR REPLACE FUNCTION public.heartbeat_focus_room(p_user_id uuid,p_id uuid,p_session_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+ PERFORM 1 FROM public.focus_rooms WHERE id=p_id AND last_active_at>now()-interval '24 hours' FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Room unavailable'; END IF;
+ UPDATE public.focus_room_sessions SET last_seen_at=now() WHERE id=p_session_id AND room_id=p_id AND user_id=p_user_id;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Session unavailable'; END IF;
+ UPDATE public.focus_rooms SET last_active_at=now() WHERE id=p_id;
+END $$;
+CREATE OR REPLACE FUNCTION public.leave_focus_room(p_user_id uuid,p_id uuid,p_session_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+ -- Same lock order as enter/control prevents multi-tab leave/join races.
+ PERFORM 1 FROM public.focus_rooms WHERE id=p_id FOR UPDATE;
+ DELETE FROM public.focus_room_sessions WHERE id=p_session_id AND room_id=p_id AND user_id=p_user_id;
+ IF NOT EXISTS(SELECT 1 FROM public.focus_room_sessions WHERE room_id=p_id AND user_id=p_user_id) THEN
+  DELETE FROM public.focus_room_members WHERE room_id=p_id AND user_id=p_user_id;
+ END IF;
+END $$;
+CREATE OR REPLACE FUNCTION public.control_focus_room(p_user_id uuid,p_id uuid,p_revision bigint,p_action text)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE saved public.focus_rooms%ROWTYPE; stamp timestamptz;
+BEGIN
+ SELECT * INTO saved FROM public.focus_rooms WHERE id=p_id AND user_id=p_user_id FOR UPDATE;
+ stamp:=clock_timestamp();
+ IF NOT FOUND OR saved.last_active_at<=now()-interval '24 hours' OR NOT EXISTS(SELECT 1 FROM public.focus_room_sessions WHERE room_id=p_id AND user_id=p_user_id AND last_seen_at>now()-interval '120 seconds') THEN RAISE EXCEPTION 'Host access required'; END IF;
+ IF p_revision IS NULL OR saved.revision<>p_revision THEN RAISE EXCEPTION 'Timer changed'; END IF;
+ IF p_action='start' THEN
+  UPDATE public.focus_rooms SET started_at=coalesce(started_at,stamp),revision=revision+1,last_active_at=stamp WHERE id=p_id;
+ ELSIF p_action='pause' THEN
+  UPDATE public.focus_rooms SET elapsed_seconds=elapsed_seconds+CASE WHEN started_at IS NULL THEN 0 ELSE greatest(0,extract(epoch FROM stamp-started_at)) END,started_at=NULL,revision=revision+1,last_active_at=stamp WHERE id=p_id;
+ ELSIF p_action='reset' THEN
+  UPDATE public.focus_rooms SET started_at=NULL,elapsed_seconds=0,revision=revision+1,last_active_at=stamp WHERE id=p_id;
+ ELSE RAISE EXCEPTION 'Invalid timer action'; END IF;
+END $$;
+-- The service computes a count only; task content is never returned to a room.
+GRANT SELECT ON public.tasks TO service_role;
+CREATE OR REPLACE FUNCTION public.focus_completion_streak(p_user_id uuid,p_time_zone text)
+RETURNS integer LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+ WITH days AS (SELECT DISTINCT (completed_at AT TIME ZONE p_time_zone)::date AS day FROM public.tasks WHERE user_id=p_user_id AND status='done' AND completed_at IS NOT NULL AND completed_at<=now() AND completed_at>now()-interval '3652 days'),
+ ordered AS (SELECT day,row_number() OVER(ORDER BY day DESC) AS n FROM days),
+ latest AS (SELECT max(day) AS day FROM days)
+ SELECT least(3650,count(*))::integer FROM ordered,latest WHERE latest.day>=(now() AT TIME ZONE p_time_zone)::date-1 AND latest.day-ordered.day=ordered.n-1;
+$$;
+CREATE OR REPLACE FUNCTION public.focus_room_snapshot(p_user_id uuid,p_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE saved public.focus_rooms%ROWTYPE; result jsonb;
+BEGIN
+ SELECT * INTO saved FROM public.focus_rooms WHERE id=p_id AND last_active_at>now()-interval '24 hours';
+ IF NOT FOUND OR NOT EXISTS(SELECT 1 FROM public.focus_room_members WHERE room_id=p_id AND user_id=p_user_id) THEN RAISE EXCEPTION 'Room unavailable'; END IF;
+ SELECT jsonb_build_object('room',jsonb_build_object('id',saved.id,'title',saved.title,'isHost',saved.user_id=p_user_id,'startedAt',saved.started_at,'elapsedSeconds',saved.elapsed_seconds,'revision',saved.revision,'lastActiveAt',saved.last_active_at),
+ 'serverNow',clock_timestamp(), 'members',coalesce((SELECT jsonb_agg(jsonb_build_object('id',m.id,'name',m.name,'streak',public.focus_completion_streak(m.user_id,m.time_zone),'sessions',
+ (SELECT jsonb_agg(jsonb_build_object('id',s.id,'expiresAt',s.last_seen_at+interval '120 seconds') ORDER BY s.id) FROM public.focus_room_sessions s WHERE s.room_id=p_id AND s.user_id=m.user_id AND s.last_seen_at>now()-interval '120 seconds')) ORDER BY m.id)
+ FROM public.focus_room_members m WHERE m.room_id=p_id AND EXISTS(SELECT 1 FROM public.focus_room_sessions s WHERE s.room_id=p_id AND s.user_id=m.user_id AND s.last_seen_at>now()-interval '120 seconds')),'[]'::jsonb)) INTO result;
+ RETURN result;
+END $$;
+CREATE OR REPLACE FUNCTION public.list_focus_rooms(p_user_id uuid)
+RETURNS TABLE(id uuid,title text,last_active_at timestamptz) LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+ SELECT r.id,r.title,r.last_active_at FROM public.focus_rooms r WHERE r.last_active_at>now()-interval '24 hours' AND (r.user_id=p_user_id OR EXISTS(SELECT 1 FROM public.focus_room_members m WHERE m.room_id=r.id AND m.user_id=p_user_id)) ORDER BY r.last_active_at DESC,r.id LIMIT 50;
+$$;
+REVOKE ALL ON FUNCTION public.create_focus_room(uuid,uuid,text),public.enter_focus_room(uuid,uuid,uuid,text,text),public.heartbeat_focus_room(uuid,uuid,uuid),public.leave_focus_room(uuid,uuid,uuid),public.control_focus_room(uuid,uuid,bigint,text),public.focus_completion_streak(uuid,text),public.focus_room_snapshot(uuid,uuid),public.list_focus_rooms(uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.create_focus_room(uuid,uuid,text),public.enter_focus_room(uuid,uuid,uuid,text,text),public.heartbeat_focus_room(uuid,uuid,uuid),public.leave_focus_room(uuid,uuid,uuid),public.control_focus_room(uuid,uuid,bigint,text),public.focus_completion_streak(uuid,text),public.focus_room_snapshot(uuid,uuid),public.list_focus_rooms(uuid) TO service_role;
+
+-- Private channel authorization does not expose membership tables to other users.
+CREATE OR REPLACE FUNCTION public.can_access_focus_topic(p_topic text)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT auth.uid() IS NOT NULL AND EXISTS(SELECT 1 FROM public.focus_rooms r JOIN public.focus_room_sessions s ON s.room_id=r.id WHERE p_topic='zenos:focus:'||r.id::text AND s.user_id=auth.uid() AND s.last_seen_at>now()-interval '120 seconds' AND r.last_active_at>now()-interval '24 hours');
+$$;
+REVOKE ALL ON FUNCTION public.can_access_focus_topic(text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.can_access_focus_topic(text) TO anon,authenticated;
+CREATE OR REPLACE FUNCTION public.broadcast_focus_timer()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ PERFORM realtime.send(jsonb_build_object('revision',NEW.revision),'timer','zenos:focus:'||NEW.id::text,true);
+ RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION public.broadcast_focus_timer() FROM PUBLIC,anon,authenticated;
+DO $$ BEGIN
+ IF to_regclass('realtime.messages') IS NULL THEN RETURN; END IF;
+ -- Match the workspace block: install authorization and publishers atomically, or defer both.
+ IF NOT (SELECT relrowsecurity FROM pg_catalog.pg_class WHERE oid='realtime.messages'::regclass) THEN ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY; END IF;
+ DROP POLICY IF EXISTS zenos_focus_receive ON realtime.messages;
+ CREATE POLICY zenos_focus_receive ON realtime.messages FOR SELECT TO authenticated USING(extension IN ('presence','broadcast') AND topic=(SELECT realtime.topic()) AND public.can_access_focus_topic(topic));
+ DROP POLICY IF EXISTS zenos_focus_presence ON realtime.messages;
+ CREATE POLICY zenos_focus_presence ON realtime.messages FOR INSERT TO authenticated WITH CHECK(extension='presence' AND topic=(SELECT realtime.topic()) AND public.can_access_focus_topic(topic));
+ DROP POLICY IF EXISTS zenos_focus_read_isolation ON realtime.messages;
+ CREATE POLICY zenos_focus_read_isolation ON realtime.messages AS RESTRICTIVE FOR SELECT TO anon,authenticated USING(topic NOT LIKE 'zenos:focus:%' OR (auth.uid() IS NOT NULL AND extension IN ('presence','broadcast') AND topic=(SELECT realtime.topic()) AND public.can_access_focus_topic(topic)));
+ DROP POLICY IF EXISTS zenos_focus_write_isolation ON realtime.messages;
+ CREATE POLICY zenos_focus_write_isolation ON realtime.messages AS RESTRICTIVE FOR INSERT TO anon,authenticated WITH CHECK(topic NOT LIKE 'zenos:focus:%' OR (auth.uid() IS NOT NULL AND extension='presence' AND topic=(SELECT realtime.topic()) AND public.can_access_focus_topic(topic)));
+ DROP POLICY IF EXISTS zenos_focus_no_update ON realtime.messages;
+ CREATE POLICY zenos_focus_no_update ON realtime.messages AS RESTRICTIVE FOR UPDATE TO anon,authenticated USING(topic NOT LIKE 'zenos:focus:%') WITH CHECK(topic NOT LIKE 'zenos:focus:%');
+ -- Realtime availability differs in ordinary PostgreSQL fixtures; policies remain testable.
+ IF to_regprocedure('realtime.send(jsonb,text,text,boolean)') IS NOT NULL THEN
+  DROP TRIGGER IF EXISTS zenos_focus_timer ON public.focus_rooms;
+  CREATE TRIGGER zenos_focus_timer AFTER UPDATE OF revision ON public.focus_rooms FOR EACH ROW WHEN(OLD.revision IS DISTINCT FROM NEW.revision) EXECUTE FUNCTION public.broadcast_focus_timer();
+ ELSE RAISE WARNING 'Focus Room timer broadcasts require Supabase realtime.send support.'; END IF;
+EXCEPTION WHEN insufficient_privilege THEN
+ RAISE WARNING 'Focus Rooms Realtime setup was not applied: an authorized Supabase project administrator must apply this block to manage realtime.messages policies. Other migrations will continue. See docs/FOCUS_ROOMS.md.';
+END $$;

@@ -1,3 +1,4 @@
+import { createFocusRooms } from './server/focusRooms';
 import { createChallenges } from './server/challenges';
 import 'dotenv/config';
 import express from 'express';
@@ -42,6 +43,14 @@ async function startServer() {
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
 
+  const focusRooms=createFocusRooms();
+  app.get('/api/focus-rooms',requireUser,focusRooms.gate,focusRooms.list);
+  app.post('/api/focus-rooms',requireUser,focusRooms.gate,rateLimit,focusRooms.create);
+  app.post('/api/focus-rooms/:id/join',requireUser,focusRooms.gate,rateLimit,focusRooms.enter);
+  app.post('/api/focus-rooms/:id/heartbeat',requireUser,focusRooms.gate,focusRooms.heartbeat);
+  app.post('/api/focus-rooms/:id/leave',requireUser,focusRooms.gate,focusRooms.leave);
+  app.post('/api/focus-rooms/:id/control',requireUser,focusRooms.gate,rateLimit,focusRooms.control);
+  app.get('/api/focus-rooms/:id',requireUser,focusRooms.gate,focusRooms.read);
   const gallery=createGallery();
   const challenges=createChallenges();
   app.get('/api/challenges/mine',requireUser,gallery.signed,gallery.noCache,challenges.mine);

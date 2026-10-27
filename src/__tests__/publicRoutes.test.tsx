@@ -98,3 +98,5 @@ it.each(['/gallery/challenges','/gallery/challenges/10000000-0000-0000-0000-0000
  await render(path);expect(host.querySelector('h1')?.textContent).toBe('Public challenges');
 });
 it('keeps password recovery ahead of challenges',async()=>{ctx.passwordRecovery=true;await render('/gallery/challenges');expect(host.querySelector('h1')?.textContent).toBe('Reset password');});
+
+it.each(['/focus-rooms','/focus-rooms/10000000-0000-0000-0000-000000000001'])('requires login for Focus Rooms at %s',async path=>{await render(path);expect(host.querySelector('h1')?.textContent).toBe('Existing Login');});

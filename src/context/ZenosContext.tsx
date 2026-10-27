@@ -1,3 +1,4 @@
+import {useFocusRooms} from '../hooks/useFocusRooms';
 import {useChallenges} from '../hooks/useChallenges';
 import { useGallery } from '../hooks/useGallery';
 import { useModelArena } from '../hooks/useModelArena';
@@ -99,7 +100,7 @@ const compact = (o: Record<string, any>) => Object.fromEntries(Object.entries(o)
 
 export type NewMeeting = Omit<Meeting, 'id' | 'createdAt'>;
 
-interface ZenosContextType extends ReturnType<typeof useGallery>, ReturnType<typeof useChallenges> {
+interface ZenosContextType extends ReturnType<typeof useGallery>, ReturnType<typeof useChallenges>, ReturnType<typeof useFocusRooms> {
   focusSession: FocusSession | null;
   startTaskFocus: (taskId: Task['id']) => void;
   stopTaskFocus: () => void;
@@ -285,6 +286,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const arena = useModelArena({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const spaces = useSpacePages({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const gallery = useGallery({ownerId:user?.id??null,isOffline,getToken:getAuthToken,refreshSpacePages:spaces.refreshSpacePages,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
+  const focusRooms=useFocusRooms({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const challenges=useChallenges({ownerId:user?.id??null,isOffline,getToken:getAuthToken,pageRevision:spaces.spacePages.map(page=>page.id).join(','),isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const semanticSearch = useSemanticSearch({ownerId:user?.id??null,isOffline,getToken:getAuthToken,state,stateRef,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const focus = useFocusTimer(user?.id || null);
@@ -1078,6 +1080,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         ...arena,
         ...gallery,
         ...challenges,
+        ...focusRooms,
         focusSession: focus.focusSession,
         startTaskFocus: id => { const task = stateRef.current.tasks.find(t => t.id === id); if (task) focus.startFocus(task); },
         stopTaskFocus: focus.stopFocus,
