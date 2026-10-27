@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createBilling } from './server/billing';
 import { createSnapHandler, snapImageBody } from './server/snap';
 import { createDailyUsage } from './server/dailyUsage';
 import { initServerMonitoring, captureServerError, captureExpressError } from './server/monitoring';
@@ -18,11 +19,18 @@ const HISTORY_LIMIT = 12;
 async function startServer() {
   await initServerMonitoring();
   const app = express();
-  const daily = createDailyUsage({ key: process.env.SUPABASE_SERVICE_ROLE_KEY, url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, limit: process.env.DANTE_DAILY_LIMIT });
+  const billing = createBilling();
+  app.post('/api/stripe/webhook', express.raw({ type: 'application/json', limit: '1mb' }), billing.webhook);
+  const daily = createDailyUsage({ isPro: billing.isPro, key: process.env.SUPABASE_SERVICE_ROLE_KEY, url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, limit: process.env.DANTE_DAILY_LIMIT });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
+
+  app.get('/api/billing/status', billing.status);
+  app.get('/api/billing/account', requireUser, billing.account);
+  app.post('/api/billing/checkout', requireUser, rateLimit, billing.checkout);
+  app.post('/api/billing/portal', requireUser, rateLimit, billing.portal);
 
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

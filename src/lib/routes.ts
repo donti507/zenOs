@@ -13,3 +13,6 @@ export const ROUTES = [
 export const pathForView = (view: string) => ROUTES.find(r => r.view === view)?.path ?? '/';
 export const routeForPath = (path: string) =>
   ROUTES.find(r => r.path === path) ?? ROUTES.find(r => r.path !== '/' && path.startsWith(r.path)) ?? ROUTES[0];
+
+/** Billing return pages are account flows, not primary workspace navigation. */
+export const BILLING_ROUTES = { upgrade: '/billing/upgrade', success: '/billing/success', cancel: '/billing/cancel' } as const;

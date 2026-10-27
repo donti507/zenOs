@@ -58,3 +58,21 @@ it('reads only this user and today without consuming allowance, including a new 
   expect(res.json.mock.calls[0][0]).toMatchObject({ enabled: true, limit: 20, messagesRemaining: 20, transcriptionsRemaining: 20 });
   expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
 });
+it('skips both daily counters and usage reads for server-verified Pro, ignoring client plan claims', async () => {
+  const getClient = vi.fn(); const next = vi.fn(); const res = response();
+  const isPro = vi.fn().mockResolvedValue(true);
+  const daily = createDailyUsage({ key: 'service', client: getClient, isPro });
+  await daily.count('messages')({ userId, body: { plan: 'free' } } as any, res, next);
+  await daily.count('transcriptions')({ userId } as any, res, next);
+  await daily.read({ userId } as any, res, vi.fn());
+  expect(isPro).toHaveBeenCalledWith(userId); expect(next).toHaveBeenCalledTimes(2);
+  expect(res.json).toHaveBeenCalledWith({ enabled: false }); expect(getClient).not.toHaveBeenCalled();
+  const rpc = vi.fn().mockResolvedValue({ data: [row], error: null });
+  await createDailyUsage({ key: 'service', client: () => client(rpc), isPro: async () => false }).count('messages')({ userId, body: { plan: 'pro' } } as any, response(), next);
+  expect(rpc).toHaveBeenCalledOnce();
+});
+it('fails closed when server plan verification fails', async () => {
+  const next = vi.fn(); const res = response();
+  await createDailyUsage({ key: 'service', isPro: async () => { throw new Error('storage unavailable'); } }).count('messages')({ userId } as any, res, next);
+  expect(next).not.toHaveBeenCalled(); expect(res.status).toHaveBeenCalledWith(503);
+});

@@ -7,6 +7,8 @@ import AccountControls from '../AccountControls';
 const account = vi.hoisted(() => ({
   user: { id: 'signed-in' } as { id: string } | null,
   isOffline: false,
+  billing: null as { enabled: boolean; plan: 'free' | 'pro'; hasCustomer?: boolean } | null,
+  startBilling: vi.fn(),
   exportMyData: vi.fn(),
   deleteMyAccount: vi.fn(),
 }));
@@ -24,6 +26,7 @@ beforeEach(() => {
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   account.user = { id: 'signed-in' };
   account.isOffline = false;
+  account.billing = null; account.startBilling.mockReset().mockResolvedValue(undefined);
   account.exportMyData.mockReset().mockResolvedValue(undefined);
   account.deleteMyAccount.mockReset().mockResolvedValue(undefined);
   host = document.createElement('div');
@@ -84,4 +87,22 @@ describe('account controls', () => {
     expect(account.deleteMyAccount).toHaveBeenCalledOnce();
     await act(async () => finish());
   });
+});
+
+it('shows upgrades only when enabled and hides billing in local mode', async () => {
+  await render(); expect(host.textContent).not.toContain('Upgrade to Pro');
+  account.billing = { enabled: true, plan: 'free' }; await render();
+  await click('Upgrade to Pro'); expect(account.startBilling).toHaveBeenCalledWith('checkout');
+  account.isOffline = true; await render(); expect(host.textContent).toBe('');
+});
+it('opens the portal for Pro and reports billing errors accessibly', async () => {
+  account.billing = { enabled: true, plan: 'pro' };
+  account.startBilling.mockRejectedValue(new Error('Billing unavailable'));
+  await render(); expect(host.textContent).not.toContain('Upgrade to Pro');
+  await click('Manage subscription'); expect(account.startBilling).toHaveBeenCalledWith('portal');
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe('Billing unavailable');
+});
+it('lets a free customer manage a past-due or canceled subscription', async () => {
+  account.billing = { enabled: true, plan: 'free', hasCustomer: true }; await render();
+  await click('Manage subscription'); expect(account.startBilling).toHaveBeenCalledWith('portal');
 });

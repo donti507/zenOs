@@ -5,7 +5,9 @@ import AppShell, { PageLoader } from './components/layout/AppShell';
 import Legal from './pages/Legal';
 import DanteOrb from './components/DanteOrb';
 import { today } from './lib/utils';
+import { BILLING_ROUTES } from './lib/routes';
 
+const BillingReturn = lazy(() => import('./pages/BillingReturn'));
 const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 
@@ -39,6 +41,8 @@ export function AppRoutes() {
   if (passwordRecovery) return <Suspense fallback={<PageLoader />}><Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} /></Suspense>;
   if (!user && pathname === '/') return <Suspense fallback={<PageLoader />}><Landing /></Suspense>;
   if (!user) return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
+
+  if (pathname === BILLING_ROUTES.success || pathname === BILLING_ROUTES.cancel || pathname === BILLING_ROUTES.upgrade) return <Suspense fallback={<PageLoader />}><BillingReturn result={pathname.endsWith('success') ? 'success' : pathname.endsWith('cancel') ? 'cancel' : 'upgrade'} /></Suspense>;
 
   if (isLoadingData) {
     return (
