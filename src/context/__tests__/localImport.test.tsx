@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({ id: 'real-account-a', rpc: vi.fn(), signOut: v
 vi.mock('../../lib/supabase', () => ({
   SUPABASE_CONFIGURED: true,
   supabase: {
+    realtime: { setAuth: async () => {} },
+    channel: () => { const channel = { on: () => channel, subscribe: () => channel }; return channel; },
+    removeChannel: async () => 'ok',
     auth: {
       getSession: async () => ({ data: { session: { user: { id: mocks.id }, access_token: 'session' } } }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),

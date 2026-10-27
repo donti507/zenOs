@@ -1,6 +1,10 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Added per-user private Supabase Realtime Broadcast for tasks/categories/meetings/vault, duplicate-safe state merging and local-write echoes, delete/snapshot race guards, reconnect recovery, sign-out/account/local-mode cleanup, scoped SQL authorization and regression tests. Apply the updated migration and enable Realtime. (Codex)
+
+- 2026-10-27: Added service-role-only Google Calendar refresh-token storage, authenticated offline-consent/refresh/disconnect endpoints, automatic expiry/401 renewal for reads and meeting creation, server restoration and account/disconnect race guards, responsive disconnect controls, setup documentation and API/SQL/client regression tests; local mode remains independent. Apply the migration and reconnect Calendar once. (Codex)
+
 - 2026-10-27: Added optional server-only Stripe subscriptions, authenticated Checkout/portal, signed raw webhooks with atomic retry-safe plan updates, read-only own-profile RLS, server-verified Pro daily-quota bypass, responsive account/pricing/return UI, setup documentation and API/SQL/UI regression tests; disabled billing preserves local mode. Apply the updated SQL migration before enabling. (Codex)
 
 - 2026-10-27: Added an Exam planner to Tasks/Calendar with reviewed, meeting-aware study scheduling, an Exams category, durable topic/checklist tracking, atomic cloud/local saves and overdue re-planning that preserves completed work; added scheduling, SQL, local persistence and modal tests, and bounded icon slots to prevent mobile overflow while fonts load. Apply the updated SQL migration. (Codex)

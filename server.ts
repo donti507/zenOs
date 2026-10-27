@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import { createGoogleTokens } from './server/google';
 import { createBilling } from './server/billing';
 import { createSnapHandler, snapImageBody } from './server/snap';
 import { createDailyUsage } from './server/dailyUsage';
@@ -26,6 +27,11 @@ async function startServer() {
   app.disable('x-powered-by');
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
+
+  const google = createGoogleTokens();
+  app.post('/api/google/connect', requireUser, rateLimit, google.connect);
+  app.post('/api/google/token', requireUser, rateLimit, google.token);
+  app.delete('/api/google/token', requireUser, google.disconnect);
 
   app.get('/api/billing/status', billing.status);
   app.get('/api/billing/account', requireUser, billing.account);

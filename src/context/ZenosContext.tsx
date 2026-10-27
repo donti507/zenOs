@@ -1,3 +1,4 @@
+import { mapTask, mapMeeting, mapCategory, mapVaultItem, completionLogFromTasks, mergeWorkspaceChange, insertWorkspaceRow, readWorkspaceChange, workspaceTopic, type WorkspaceChange, type WorkspaceTable } from '../lib/workspaceRealtime';
 import { planExam, remainingExamTasks, examSnapshot, type ExamDraft } from '../lib/examPlanner';
 import { applyPostponement } from '../lib/postponement';
 import { useFocusTimer, type FocusSession } from '../hooks/useFocusTimer';
@@ -11,6 +12,7 @@ import { today, localDateStr } from '../lib/utils';
 import { supabase, SUPABASE_CONFIGURED } from '../lib/supabase';
 import { exportAccountData, deleteAccountData, downloadAccountData } from '../lib/accountData';
 import { shouldOfferLocalImport, declineLocalImport, importLocalData } from '../lib/localImport';
+import { useGoogleCalendar, GOOGLE_CONNECT_PENDING, type GoogleProviderSession } from '../hooks/useGoogleCalendar';
 import { fetchGoogleCalendarEvents } from '../lib/googleCalendar';
 
 export const OFFLINE_USER_ID = 'offline-user-123';
@@ -66,38 +68,6 @@ const writeLS = (key: string, value: unknown) => {
 const newId = () =>
   (typeof crypto !== 'undefined' && 'randomUUID' in crypto) ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-// ---------- row mappers (DB snake_case -> app camelCase) ----------
-const mapTask = (t: any): Task => ({
-  examPlan: t.exam_plan || undefined,
-  id: t.id,
-  title: t.title,
-  cat: t.cat || 'other',
-  status: (t.status || 'todo') as Task['status'],
-  date: t.date || '',
-  reminder: t.reminder || '',
-  note: t.note || '',
-  progress: t.progress || 0,
-  steps: t.steps || [],
-  completedAt: t.completed_at || t.completedAt || null,
-  postponedCount: t.postponed_count || 0,
-  recurrence: isRecurrence(t.recurrence) ? t.recurrence : 'none',
-  recurrenceSourceId: t.recurrence_source_id || t.recurrenceSourceId || null,
-  recurrenceDay: t.recurrence_day || t.recurrenceDay || null,
-});
-
-const mapMeeting = (m: any): Meeting => ({
-  id: m.id,
-  personName: m.person_name ?? m.personName ?? '',
-  date: m.date || '',
-  time: m.time || '',
-  subject: m.subject || '',
-  status: (m.status || 'upcoming') as Meeting['status'],
-  elapsedSeconds: m.elapsed_seconds ?? m.elapsedSeconds ?? 0,
-  notes: m.notes || '',
-  googleEventId: m.google_event_id ?? m.googleEventId ?? null,
-  createdAt: m.created_at ?? m.createdAt ?? new Date().toISOString(),
-});
-
 const meetingToRow = (m: Partial<Meeting>) => {
   const row: Record<string, any> = {};
   if (m.personName !== undefined) row.person_name = m.personName;
@@ -114,8 +84,7 @@ const meetingToRow = (m: Partial<Meeting>) => {
 /** Removes undefined keys so a partial update doesn't null out columns. */
 const compact = (o: Record<string, any>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
-const completionLogFromTasks = (tasks: Task[]) =>
-  tasks.filter(t => t.status === 'done' && t.completedAt).map(t => localDateStr(new Date(t.completedAt as string)));
+
 
 export type NewMeeting = Omit<Meeting, 'id' | 'createdAt'>;
 
@@ -144,6 +113,10 @@ interface ZenosContextType {
   user: any | null;
   isOffline: boolean;
   accessToken: string | null;
+  googleConnected: boolean;
+  googleCalendarError: string | null;
+  getGoogleAccessToken: (forceRefresh?: boolean) => Promise<string>;
+  disconnectGoogleCalendar: () => Promise<void>;
   googleEvents: any[];
   setGoogleEvents: React.Dispatch<React.SetStateAction<any[]>>;
   loadingEvents: boolean;
@@ -201,14 +174,22 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const [usageState, setUsageState] = useState<{ userId: string | null; data: DanteUsage | null; error: string | null }>({ userId: null, data: null, error: null });
   const usageRequest = useRef(0);
   const taskReloadRequest = useRef(0);
+  const workspaceOwner = useRef<string | null>(null);
+  const workspaceReadVersion = useRef(0);
+  const workspaceSessionGeneration = useRef(0);
+  const deletedWorkspaceRows = useRef(new Set<string>());
+  const insertCloudRow = (state: ZenosState, owner: string, table: WorkspaceTable, row: Record<string, any>) =>
+    workspaceOwner.current === owner && !deletedWorkspaceRows.current.has(`${table}:${row.id}`) ? insertWorkspaceRow(state, table, row) : state;
+  const pendingWorkspaceReads = useRef(new Set<{ owner: string; changes: WorkspaceChange[] }>());
   const [mounted, setMounted] = useState(false);
   const [showModal, setShowModal] = useState<string | null>(null);
   const [editTaskId, setEditTaskId] = useState<number | string | null>(null);
 
   const [user, setUser] = useState<any | null>(null);
-  const [accessToken, setAccessTokenState] = useState<string | null>(null);
+  const [googleProviderSession, setGoogleProviderSession] = useState<GoogleProviderSession | null>(null);
   const [googleEvents, setGoogleEvents] = useState<any[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [googleReadError, setGoogleReadError] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [showBriefing, setShowBriefing] = useState(false);
@@ -224,6 +205,24 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   offlineRef.current = isOffline;
   const userRef = useRef(user);
   userRef.current = user;
+  const getAuthToken = useCallback(async () => {
+    if (!SUPABASE_CONFIGURED || userRef.current?.id === OFFLINE_USER_ID) return null;
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token ?? null;
+  }, []);
+  const { accessToken, googleConnected, googleCalendarError, getGoogleAccessToken, disconnectGoogleCalendar: disconnectGoogle } = useGoogleCalendar({ userId: user?.id ?? null, isOffline, getAuthToken, providerSession: googleProviderSession });
+  const googleReadRequest = useRef(0);
+  const disconnectGoogleCalendar = async () => {
+    ++googleReadRequest.current;
+    setGoogleEvents([]);
+    await disconnectGoogle();
+  };
+  const captureGoogleSession = (session: any) => {
+    // Only a deliberate Calendar consent flow uploads provider credentials.
+    let requested = false;
+    try { requested = sessionStorage.getItem(GOOGLE_CONNECT_PENDING) === 'true'; } catch { /* storage unavailable */ }
+    if (requested && session.provider_refresh_token && session.access_token) setGoogleProviderSession({ userId: session.user.id, refreshToken: session.provider_refresh_token, authToken: session.access_token });
+  };
   const focus = useFocusTimer(user?.id || null);
   const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
 
@@ -257,18 +256,22 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => { writeLS(LS.theme, state.theme); }, [state.theme]);
 
-  const fetchUserData = async (userId: string) => {
+  const fetchUserData = async (userId: string, options: { workspaceOnly?: boolean } = {}) => {
     if (!SUPABASE_CONFIGURED || userId === OFFLINE_USER_ID) {
       loadLocalData();
       return;
     }
+    const version = ++workspaceReadVersion.current;
+    const read = { owner: userId, changes: [] as WorkspaceChange[] };
+    pendingWorkspaceReads.current.add(read);
+    const current = () => workspaceOwner.current === userId && workspaceReadVersion.current === version;
     try {
       const [tasksRes, catsRes, vaultRes, meetRes, danteRes] = await Promise.all([
         supabase.from('tasks').select('*').order('created_at', { ascending: true }),
         supabase.from('categories').select('*'),
         supabase.from('vault_items').select('*').order('added_at', { ascending: false }),
         supabase.from('meetings').select('*').order('date', { ascending: true }),
-        supabase.from('dante_messages').select('*').order('created_at', { ascending: false }).limit(DANTE_HISTORY_LIMIT),
+        options.workspaceOnly ? Promise.resolve({ data: [], error: null }) : supabase.from('dante_messages').select('*').order('created_at', { ascending: false }).limit(DANTE_HISTORY_LIMIT),
       ]);
       if (tasksRes.error) throw tasksRes.error;
       if (catsRes.error) throw catsRes.error;
@@ -276,8 +279,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       if (meetRes.error) console.warn('meetings table missing? Run supabase-schema-update.sql', meetRes.error);
       if (danteRes.error) console.warn('dante_messages table missing? Run supabase-schema-update.sql', danteRes.error);
 
+      if (!current()) return;
       let dbCats = catsRes.data || [];
-      if (dbCats.length === 0) {
+      if (dbCats.length === 0 && !options.workspaceOnly) {
         const { data: inserted, error } = await supabase
           .from('categories')
           .insert(DEFAULT_CATEGORIES.map(d => ({ label: d.label, color: d.color, slug: d.id, user_id: userId })))
@@ -286,32 +290,26 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         else if (inserted) dbCats = inserted;
       }
 
+      if (!current()) return;
       const tasks = (tasksRes.data || []).map(mapTask);
-      setState(s => ({
+      setState(s => current() ? read.changes.reduce(mergeWorkspaceChange, {
         ...s,
         tasks,
         completionLog: completionLogFromTasks(tasks),
-        categories: dbCats.map((c: any) => ({ id: c.id, label: c.label, color: c.color || '#888' })),
-        vault: (vaultRes.data || []).map((v: any) => ({
-          id: v.id,
-          type: (v.type || 'link') as 'file' | 'link',
-          name: v.name,
-          detail: v.detail || '',
-          url: v.url || '',
-          addedAt: v.added_at,
-        })),
+        categories: dbCats.map(mapCategory),
+        vault: (vaultRes.data || []).map(mapVaultItem),
         meetings: (meetRes.data || []).map(mapMeeting),
-        danteHistory: (danteRes.data || []).reverse().map((dm: any) => ({
+        danteHistory: options.workspaceOnly ? s.danteHistory : (danteRes.data || []).reverse().map((dm: any) => ({
           role: dm.role,
           content: dm.content,
           ts: new Date(dm.created_at).getTime(),
         })),
-      }));
+      }) : s);
       setSyncError(null);
       setCloudLoadedFor(userId);
     } catch (err) {
-      reportError('Could not load your data from the cloud', err);
-    }
+      if (current()) reportError('Could not load your data from the cloud', err);
+    } finally { pendingWorkspaceReads.current.delete(read); }
   };
 
   useEffect(() => {
@@ -357,21 +355,27 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
+    let active = true;
     const init = async () => {
+      const generation = workspaceSessionGeneration.current;
       try {
         const { data } = await supabase.auth.getSession();
+        if (!active || generation !== workspaceSessionGeneration.current) return;
         const session = data?.session;
         if (session) {
+          workspaceOwner.current = session.user.id;
           setUser(session.user);
-          if (session.provider_token) setAccessTokenState(session.provider_token);
+          captureGoogleSession(session);
           setIsLoadingData(true);
           await fetchUserData(session.user.id);
         }
       } catch (err) {
         console.error('Initial session fetch failed:', err);
       } finally {
-        setIsLoadingData(false);
-        setMounted(true);
+        if (active) {
+          if (generation === workspaceSessionGeneration.current) setIsLoadingData(false);
+          setMounted(true);
+        }
       }
     };
     init();
@@ -379,9 +383,16 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       if (event === 'INITIAL_SESSION') return; // handled by init()
+      ++workspaceSessionGeneration.current;
+      if (event === 'TOKEN_REFRESHED' && userRef.current?.id === OFFLINE_USER_ID) return;
       if (session) {
+        if (workspaceOwner.current !== session.user.id) {
+          setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
+          setCloudLoadedFor(null);
+        }
+        workspaceOwner.current = session.user.id;
         setUser(session.user);
-        if (session.provider_token) setAccessTokenState(session.provider_token);
+        captureGoogleSession(session);
         if (event === 'SIGNED_IN') {
           // Don't await inside the callback (supabase-js deadlock warning); defer it.
           setTimeout(async () => {
@@ -391,14 +402,57 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
           }, 0);
         }
       } else if (userRef.current?.id !== OFFLINE_USER_ID) {
+        workspaceOwner.current = null;
+        setCloudLoadedFor(null);
         setUser(null);
-        setAccessTokenState(null);
+        setGoogleProviderSession(null);
         setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
       }
     });
 
-    return () => listener?.subscription?.unsubscribe();
+    return () => { active = false; listener?.subscription?.unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    if (!SUPABASE_CONFIGURED || !user || isOffline || cloudLoadedFor !== user.id) return;
+    const owner = user.id as string;
+    let active = true;
+    let channel: ReturnType<typeof supabase.channel> | undefined;
+    const current = () => active && workspaceOwner.current === owner && !offlineRef.current;
+    const receive = (message: unknown) => {
+      if (!current()) return;
+      const change = readWorkspaceChange(message, owner);
+      if (!change) return;
+      const key = `${change.table}:${change.row.id}`;
+      if (change.operation === 'DELETE') deletedWorkspaceRows.current.add(key);
+      else deletedWorkspaceRows.current.delete(key);
+      for (const read of pendingWorkspaceReads.current) if (read.owner === owner) read.changes.push(change);
+      setState(s => current() ? mergeWorkspaceChange(s, change) : s);
+    };
+    const unavailable = 'Live sync is unavailable. Reload to check for the latest changes.';
+    void (async () => {
+      try {
+        await supabase.realtime.setAuth();
+        if (!current()) return;
+        channel = supabase.channel(workspaceTopic(owner), { config: { private: true } })
+          .on('broadcast', { event: 'INSERT' }, receive)
+          .on('broadcast', { event: 'UPDATE' }, receive)
+          .on('broadcast', { event: 'DELETE' }, receive)
+          .subscribe(status => {
+            if (!current()) return;
+            if (status === 'SUBSCRIBED') {
+              setSyncError(error => error === unavailable ? null : error);
+              void fetchUserData(owner, { workspaceOnly: true });
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setSyncError(error => error || unavailable);
+          });
+      } catch { if (current()) setSyncError(error => error || unavailable); }
+    })();
+    return () => {
+      active = false;
+      deletedWorkspaceRows.current.clear();
+      if (channel) void supabase.removeChannel(channel).catch(() => {});
+    };
+  }, [user?.id, isOffline, cloudLoadedFor]);
 
   // Never let the loading screen hang
   useEffect(() => {
@@ -413,25 +467,29 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   // ---------- Google Calendar ----------
   const fetchGoogleEvents = async () => {
-    const token = accessToken;
-    if (!token) return;
-    setLoadingEvents(true);
+    const owner = userRef.current?.id;
+    if (!owner || offlineRef.current || !googleConnected) return;
+    const request = ++googleReadRequest.current;
+    const { calYear, calMonth } = stateRef.current;
+    setLoadingEvents(true); setGoogleReadError(null);
     try {
-      const items = await fetchGoogleCalendarEvents(token, state.calYear, state.calMonth);
-      setGoogleEvents(items);
-    } catch (err) {
-      console.error('Failed to load Google Calendar events:', err);
-      if (err instanceof Error && err.message.toLowerCase().includes('unauthorized')) {
-        setAccessTokenState(null);
-      }
+      const items = await fetchGoogleCalendarEvents(getGoogleAccessToken, calYear, calMonth);
+      if (userRef.current?.id === owner && request === googleReadRequest.current && !offlineRef.current) setGoogleEvents(items);
+    } catch {
+      if (userRef.current?.id === owner && request === googleReadRequest.current) setGoogleReadError('Google Calendar could not sync. Try again or reconnect Calendar.');
+      // Never log Calendar responses or tokens.
     } finally {
-      setLoadingEvents(false);
+      if (request === googleReadRequest.current) setLoadingEvents(false);
     }
   };
 
   useEffect(() => {
-    if (accessToken) fetchGoogleEvents();
-  }, [accessToken, state.calYear, state.calMonth]);
+    ++googleReadRequest.current;
+    setGoogleEvents([]);
+    setLoadingEvents(false); setGoogleReadError(null);
+    if (googleConnected) void fetchGoogleEvents();
+    return () => { ++googleReadRequest.current; };
+  }, [user?.id, isOffline, googleConnected, state.calYear, state.calMonth]);
 
   /**
    * Sign in with Google. Plain sign-in only asks for name + email (no Google review needed).
@@ -439,6 +497,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
    */
   const loginWithGoogle = async (withCalendar = false) => {
     if (!SUPABASE_CONFIGURED) throw new Error('Google sign-in needs Supabase to be configured.');
+    if (withCalendar) {
+      try { sessionStorage.setItem(GOOGLE_CONNECT_PENDING, 'true'); } catch { throw new Error('Allow session storage to connect Google Calendar.'); }
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -451,10 +512,16 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
           : {}),
       },
     });
-    if (error) throw error;
+    if (error) {
+      if (withCalendar) sessionStorage.removeItem(GOOGLE_CONNECT_PENDING);
+      throw error;
+    }
   };
 
   const logOut = async () => {
+    ++workspaceSessionGeneration.current;
+    workspaceOwner.current = null;
+    setCloudLoadedFor(null);
     try {
       if (SUPABASE_CONFIGURED && user?.id !== OFFLINE_USER_ID) {
         const { error } = await supabase.auth.signOut();
@@ -464,7 +531,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       console.error('Sign-out failed:', error);
     } finally {
       setUser(null);
-      setAccessTokenState(null);
+      setGoogleProviderSession(null);
       setGoogleEvents([]);
       setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
     }
@@ -488,19 +555,14 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     await deleteAccountData(supabase);
     // The deleted user's refresh token is no longer valid. Clear the local session.
     const { error } = await supabase.auth.signOut({ scope: 'local' });
+    workspaceOwner.current = null;
     setUser(null);
-    setAccessTokenState(null);
+    setGoogleProviderSession(null);
     setGoogleEvents([]);
     setLiveOpen(false);
     setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
     if (error) throw new Error('Account deleted, but session cleanup failed. Please reload the page.');
   };
-
-  const getAuthToken = useCallback(async () => {
-    if (!SUPABASE_CONFIGURED || userRef.current?.id === OFFLINE_USER_ID) return null;
-    const { data } = await supabase.auth.getSession();
-    return data?.session?.access_token ?? null;
-  }, []);
 
   const [billingState, setBillingState] = useState<{ owner: string | null; enabled: boolean; plan: 'free' | 'pro'; hasCustomer?: boolean } | null>(null);
   const billingRequest = useRef(0);
@@ -654,7 +716,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) throw error;
       if (userRef.current?.id !== ownerId) return null;
       const task = mapTask(data);
-      setState(s => ({ ...s, tasks: [...s.tasks, task] }));
+      setState(s => insertCloudRow(s, ownerId, 'tasks', data));
       return task;
     } catch (err) {
       reportError('Could not save task', err);
@@ -664,11 +726,19 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   const reloadCloudTasks = async (userId: string) => {
     const request = ++taskReloadRequest.current;
-    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
-    if (error) throw error;
-    if (userRef.current?.id !== userId || request !== taskReloadRequest.current) return;
-    const tasks = (data || []).map(mapTask);
-    setState(s => ({ ...s, tasks, completionLog: completionLogFromTasks(tasks) }));
+    const read = { owner: userId, changes: [] as WorkspaceChange[] };
+    pendingWorkspaceReads.current.add(read);
+    const current = () => workspaceOwner.current === userId && request === taskReloadRequest.current;
+    try {
+      const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+      if (error) throw error;
+      if (!current()) return;
+      const tasks = (data || []).map(mapTask);
+      setState(s => {
+        if (!current()) return s;
+        return read.changes.filter(change => change.table === 'tasks').reduce(mergeWorkspaceChange, { ...s, tasks, completionLog: completionLogFromTasks(tasks) });
+      });
+    } finally { pendingWorkspaceReads.current.delete(read); }
   };
 
   const editTask = async (id: number | string, rawUpdates: Partial<Task>) => {
@@ -730,6 +800,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   // ---------- Categories ----------
   const addCategory = async (label: string, color: string) => {
     if (!userRef.current) return;
+    const ownerId = userRef.current.id;
     if (offlineRef.current) {
       setState(s => ({ ...s, categories: [...s.categories, { id: newId(), label, color }] }));
       return;
@@ -741,7 +812,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         .select()
         .single();
       if (error) throw error;
-      setState(s => ({ ...s, categories: [...s.categories, { id: data.id, label: data.label, color: data.color || '#888' }] }));
+      setState(s => insertCloudRow(s, ownerId, 'categories', data));
     } catch (err) {
       reportError('Could not save category', err);
     }
@@ -750,6 +821,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   // ---------- Vault ----------
   const addVaultItem = async (item: Omit<VaultItem, 'id' | 'addedAt'>) => {
     if (!userRef.current) return;
+    const ownerId = userRef.current.id;
     if (offlineRef.current) {
       setState(s => ({ ...s, vault: [{ ...item, id: newId(), addedAt: new Date().toISOString() }, ...s.vault] }));
       return;
@@ -761,15 +833,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         .select()
         .single();
       if (error) throw error;
-      const mapped: VaultItem = {
-        id: data.id,
-        type: (data.type || 'link') as 'file' | 'link',
-        name: data.name,
-        detail: data.detail || '',
-        url: data.url || '',
-        addedAt: data.added_at,
-      };
-      setState(s => ({ ...s, vault: [mapped, ...s.vault] }));
+      setState(s => insertCloudRow(s, ownerId, 'vault_items', data));
     } catch (err) {
       reportError('Could not save vault item', err);
     }
@@ -806,7 +870,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       if (error) throw error;
       if (userRef.current?.id !== ownerId) return null;
       const meeting = mapMeeting(data);
-      setState(s => ({ ...s, meetings: [meeting, ...(s.meetings || [])] }));
+      setState(s => insertCloudRow(s, ownerId, 'meetings', data));
       return meeting;
     } catch (err) {
       reportError('Could not save meeting', err);
@@ -842,6 +906,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   // ---------- Local mode ----------
   const loginOffline = (email?: string, name?: string) => {
+    ++workspaceSessionGeneration.current;
+    workspaceOwner.current = null;
+    setCloudLoadedFor(null);
     setIsLoadingData(false);
     setMounted(true);
     setUser({
@@ -898,6 +965,10 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         user,
         isOffline,
         accessToken,
+        googleConnected,
+        googleCalendarError: googleCalendarError || googleReadError,
+        getGoogleAccessToken,
+        disconnectGoogleCalendar,
         googleEvents,
         setGoogleEvents,
         loadingEvents,
