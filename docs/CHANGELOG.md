@@ -1,6 +1,12 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-27: Installed FFmpeg/ffprobe explicitly in GitHub CI for real lecture-audio tests and removed a wall-clock race from the processing-session expiry test; validated typecheck, all tests and build with CI's Node 22. (Codex)
+
+- 2026-10-27: Fixed managed Realtime migration compatibility by skipping unnecessary RLS ALTERs and atomically deferring policy/trigger setup on ownership denial, allowing later app tables to migrate without weakening channel isolation; added restricted-role regression coverage and troubleshooting instructions. (Codex)
+
+- 2026-10-27: Added Lectures recording/uploads (60 minutes), FFmpeg sub-10 MB transcription sections, streamed analysis progress, saved summaries/key points/ten reviewable flashcards/action items, duplicate-safe task creation, cloud RLS/atomic RPCs and local IndexedDB persistence; added audio/API/SQL/client regression tests and setup documentation. Apply the migration and install FFmpeg. (Codex)
+
 - 2026-10-27: Added Dante long-term memory with per-user RLS, atomic 100-fact quota and 200-character validation, remember/confirmed forget actions for chat and Live, server-loaded 30-fact prompt data, a responsive inspect/delete panel with mobile composer clearance, local persistence, account export/cascade support and SQL/server/client regression tests. Apply the latest migration. (Codex)
 
 - 2026-10-27: Added per-user private Supabase Realtime Broadcast for tasks/categories/meetings/vault, duplicate-safe state merging and local-write echoes, delete/snapshot race guards, reconnect recovery, sign-out/account/local-mode cleanup, scoped SQL authorization and regression tests. Apply the updated migration and enable Realtime. (Codex)

@@ -20,6 +20,7 @@ const MOBILE_TABS = [
   { to: '/', icon: 'home', label: 'Home' },
   { to: '/board', icon: 'view_kanban', label: 'Board' },
   { to: '/calendar', icon: 'calendar_today', label: 'Calendar' },
+  { to: '/lectures', icon: 'school', label: 'Lectures' },
   { to: '/meetings', icon: 'videocam', label: 'Meetings' },
   { to: '/vault', icon: 'folder_special', label: 'Vault' },
 ];

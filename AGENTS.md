@@ -8,7 +8,7 @@ ZEN OS: productivity web app (tasks, kanban, calendar, meetings, analytics, vaul
 ## Stack
 - Client: React 19, Vite, Tailwind CSS v4, `motion` (Framer Motion), React Router 7. TypeScript everywhere.
 - Server: Express (`server.ts`), bundled with esbuild to `dist/server.cjs`.
-- Data/auth: Supabase (Postgres + RLS). Without Supabase the app runs in **local mode** (localStorage).
+- Data/auth: Supabase (Postgres + RLS). Without Supabase the app runs in **local mode** (localStorage; lecture transcripts use IndexedDB).
 - AI: any OpenAI-compatible API (currently PSNC: `https://llm.hpc.psnc.pl/v1`, chat `Qwen3.8-27B`, speech `whisper-large-v3-turbo:0.8b`), or Gemini.
 
 ## Commands
@@ -38,7 +38,7 @@ src/components/layout/    AppShell (sidebar, header, mobile nav, RouteSync), Sid
 src/components/ui/kit.tsx Design-system primitives: card, btn.*, input, Modal, Field, PageHeader, EmptyState, Segmented, CategoryChip, Icon
 src/components/DanteLive.tsx   Full-screen voice assistant
 src/components/views/DanteAI.tsx  Dante chat page
-src/pages/*.tsx           Home, Tasks, Board, Calendar, Meetings, Analytics, Vault, Login
+src/pages/*.tsx           Home, Tasks, Board, Calendar, Meetings, Analytics, Vault, Lectures, Login
 supabase-schema*.sql      DB schema + idempotent migration (run both)
 ```
 
@@ -135,9 +135,18 @@ Billing state/actions go through `useZenos()`. Account menus show Upgrade to Pro
 ## Workspace Realtime
 `src/lib/workspaceRealtime.ts` shares cloud row mapping and duplicate-safe change merging. ZenosContext subscribes to a single private `zenos:workspace:<user UUID>` Broadcast channel only for a loaded signed-in cloud account; it removes that channel on sign-out/account/local-mode changes and ignores late callbacks/reads. Source-table triggers and scoped receive/publisher policies in the SQL migration authorize only that user's rows, including DELETE (Postgres Changes cannot filter deletes). Never replace this with a global/unfiltered delete feed or enable client publishing on this topic prefix.
 
+Supabase owns `realtime.messages`; skip ALTER TABLE when RLS is already enabled. If the migration role cannot manage its policies, the entire Realtime policy/trigger block rolls back and warns while later app migrations continue. Realtime remains pending until an authorized project administrator applies the block; never install publishers without the matching isolation policies or change managed-table ownership. See docs/REALTIME.md for troubleshooting.
+
 On channel join/rejoin, reconcile only the four workspace tables and replay broadcasts received during the read. Preserve chat/UI state, task field mappings/completion history and idempotent mutation responses; local mode stays independent. Apply the SQL migration and enable Supabase Realtime before live testing; see docs/REALTIME.md.
 
 ## Dante long-term memory
 `dante_memory` stores at most 100 own-account facts (1–200 Unicode characters) with UUID IDs and timestamps; apply the migration for RLS, an atomic trigger quota and idempotent owner-bound `remember_dante_fact`. Memory reads/writes go through ZenosContext with an independent localStorage path in local mode. The `remember` and `forget` actions work in chat and Live; forgetting requires the shared confirmation dialog before deleting by exact ID. Never save inferred/sensitive facts silently.
 
 `server/memory.ts` replaces authenticated client memory with the verified user's 30 newest database facts using their JWT/RLS, and the prompt includes only bounded JSON data, never trusted instructions. Local/anonymous prompts use validated local facts. The Dante page panel shows all saved facts for inspection and confirmed deletion; focus/manual refresh picks up cloud changes. Account changes cancel confirmations and ignore stale responses. Account export includes cloud facts; account deletion cascades them. Facts are sent to the configured AI provider when chatting; never log them or include them in monitoring. See docs/DANTE_MEMORY.md.
+
+## Lecture study guides
+`src/pages/Lectures.tsx` records with MediaRecorder or uploads up to 60 minutes/1 GB, and displays processing progress, notes, ten Q/A flashcards and one-click action tasks. The lazy route is primary navigation. All saved data goes through ZenosContext's `useLectures`: Supabase own-user RLS online, IndexedDB for local lecture transcripts (an intentional exception to localStorage), with existing localStorage tasks. Cloud lists paginate metadata and fetch transcripts on demand. Account export/cascade includes lectures; the existing local workspace importer does not import IndexedDB lectures.
+
+`server/lectures.ts` mounts authenticated binary preparation/transcription/NDJSON analysis routes before express.json. FFmpeg/ffprobe are runtime and audio-test requirements (installed explicitly in Docker and GitHub CI); `lectureAudio.ts` streams a bounded temporary upload, checks decoded duration and creates independently valid four-minute WAV chunks strictly under 10 MB. Never slice compressed bytes into transcription requests. Transcription reuses `transcribeAudio` from `server/stt.ts`; `lectureAnalysis.ts` condenses long transcripts in bounded stages and validates exactly ten cards. Model output cannot set review state or task IDs. Quotas charge uncached sections/analysis attempts; cached retries skip reservations. Temporary owner-bound jobs expire, cancel on disconnect/navigation and require single-instance/sticky routing. Do not log lecture content. See docs/LECTURES.md.
+
+Apply the migration for validated lectures and RLS-respecting atomic card-review/task RPCs. Cloud action/task linking is transactional and retry-safe; local tasks use deterministic IDs before updating IndexedDB to survive partial storage failure. Review/save mutations never overwrite another card's progress, and initial-save retries preserve existing notes. Client callbacks ignore account changes. Use shared/lectures.ts validation for provider and database reads.

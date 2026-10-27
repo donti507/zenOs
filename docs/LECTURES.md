@@ -1,0 +1,25 @@
+# Lectures
+
+Open **Lectures** from the sidebar or mobile navigation. Record with the microphone (HTTPS/localhost and browser permission required), or upload an audio file. The limit is 60 minutes and 1 GB per lecture. Download a recording before processing if you want to retain the original. Keep the page open during processing.
+
+Processing shows preparation, section transcription, analysis and saving progress. Results contain a summary, key points, exactly ten Q/A flashcards and optional action items. Flip cards and mark Known/Unknown; reviews persist. **Add as task** creates today's task and records its link. Retrying the same action does not create another task while that task exists. Notes are model-generated: review them before relying on them.
+
+## Server setup
+
+1. Apply `supabase-schema.sql`, then the latest idempotent `supabase-schema-update.sql`. It creates `lectures` with own-user RLS, account-deletion cascade, JSON validation and authenticated, RLS-respecting `review_lecture_card` / `add_lecture_task` transactions. Account export includes complete lectures.
+2. Install `ffmpeg` **and** `ffprobe` on the application server. The Docker runtime and GitHub CI install the distribution's FFmpeg package explicitly. For Debian/Ubuntu development: `sudo apt-get update && sudo apt-get install -y ffmpeg`. No browser audio conversion package is required.
+3. Configure the existing server-only transcription and LLM settings (`STT_BASE_URL`, `STT_API_KEY`, `STT_MODEL`; `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, or `GEMINI_API_KEY`). See `.env.example`; no new provider secrets are introduced. Transcription uses the same helper as `/api/transcribe`.
+4. Preserve the existing authentication configuration. All lecture processing endpoints use `requireUser` and the verified identity; request bodies cannot select an owner. Anonymous/local processing follows `DANTE_ALLOW_ANONYMOUS`. Keep it disabled for public deployments. The UI reports missing provider configuration.
+5. Allow uploads up to 1 GB and long requests in your reverse proxy. Preparation streams to disk; it does not pass through Express's JSON parser. Allow at least three minutes for conversion plus upload time. Disable proxy buffering for analysis (`application/x-ndjson`). Size and duration are checked on the server, including recordings whose WebM container lacks duration metadata.
+
+The server converts audio to independent, four-minute, mono 16 kHz PCM WAV sections, each strictly below 10,000,000 bytes. It checks the decoded duration before transcription. Arbitrarily slicing compressed blobs would yield invalid chunks, so conversion happens server-side. Long transcripts use bounded section summaries before the final study guide. The transcript limit is 200,000 characters; oversized transcripts fail explicitly.
+
+Uncached transcription sections consume the existing daily transcription allowance; an admitted analysis attempt consumes one daily message allowance. Provider failures/cancellation may consume that attempt's allowance. Cached sections/completed analysis skip new quota reservations. Pro exemption and per-minute rate limiting still apply. A 60-minute lecture normally needs 15 transcription requests; check your configured allowance.
+
+## Storage, retries and privacy
+
+Only transcripts, notes, flashcard review state and action/task links are saved, never raw audio. Cloud storage goes through ZenosContext and Supabase RLS. Local mode stores lectures in IndexedDB, keeping large transcripts out of localStorage; local tasks use the existing localStorage path. No Supabase calls occur for local lecture storage. Browser storage can be cleared/evicted, so it is not a backup. Local lecture import into a cloud account is not included in the existing four-table workspace importer.
+
+Audio is sent to the configured transcription provider and text to the configured AI provider. Do not log uploads, transcripts, model output or credentials. Obtain any consent required before recording other people. Temporary server directories are private; source audio is removed after conversion, and sections are removed after successful saving/cancellation or one hour of inactivity. After a process restart, abandoned directories older than 24 hours are swept. Failed saves retain a draft with Retry saving; retries preserve existing review/task state. Choosing another file or leaving the page cancels temporary processing. An expired job requires uploading again.
+
+Jobs and partial analysis caches live in one server process. Use a single instance, or sticky routing for all requests of a lecture; restarting or switching instances loses the processing session. Each user has one active job, with eight jobs total and at most two simultaneous conversion/analysis operations. Provide sufficient temporary disk space for uploads plus decoded audio. Horizontal job storage/queues and background processing are future work. The browser needs a microphone-capable MediaRecorder implementation to record; uploads remain available when recording is unsupported.

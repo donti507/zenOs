@@ -18,7 +18,7 @@ export interface ActionDeps {
   updateState: (u: Partial<ZenosState>) => void;
 }
 
-const VIEWS = ["dashboard", "tasks", "kanban", "calendar", "meetings", "analytics", "vault", "dante"];
+const VIEWS = ["dashboard", "tasks", "kanban", "calendar", "meetings", "analytics", "vault", "dante", "lectures"];
 
 /** Runs the actions Dante asked for. Shared by the chat page and Dante Live. */
 export async function runDanteActions(actions: DanteAction[], deps: ActionDeps): Promise<ActionResult[]> {

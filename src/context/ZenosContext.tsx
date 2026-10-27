@@ -1,3 +1,4 @@
+import { useLectures } from '../hooks/useLectures';
 import { MEMORY_LIMIT, memoryFromRow, recentMemory, validateMemoryFact, type DanteMemory } from '../../shared/danteMemory';
 import { useDanteMemoryConfirmation } from '../components/DanteMemoryConfirmation';
 import { mapTask, mapMeeting, mapCategory, mapVaultItem, completionLogFromTasks, mergeWorkspaceChange, insertWorkspaceRow, readWorkspaceChange, workspaceTopic, type WorkspaceChange, type WorkspaceTable } from '../lib/workspaceRealtime';
@@ -38,6 +39,7 @@ const DEFAULT_STATE: ZenosState = {
   vault: [],
   danteHistory: [],
   danteMemory: [],
+  lectures: [],
   completionLog: [],
   selectedDate: null,
   meetings: [],
@@ -97,6 +99,13 @@ interface ZenosContextType {
   startTaskFocus: (taskId: Task['id']) => void;
   stopTaskFocus: () => void;
   state: ZenosState;
+  lecturesLoading: boolean;
+  lecturesError: string | null;
+  refreshLectures: () => Promise<void>;
+  loadLecture: (id: string) => Promise<import('../../shared/lectures').Lecture>;
+  saveLecture: (lecture: import('../../shared/lectures').Lecture) => Promise<import('../../shared/lectures').Lecture>;
+  reviewLectureCard: (id: string, index: number, known: boolean) => Promise<void>;
+  addLectureActionTask: (id: string, index: number) => Promise<void>;
   updateState: (updates: Partial<ZenosState>) => void;
   toggleTheme: () => void;
   toggleTaskDone: (id: number | string) => Promise<void>;
@@ -238,6 +247,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     try { requested = sessionStorage.getItem(GOOGLE_CONNECT_PENDING) === 'true'; } catch { /* storage unavailable */ }
     if (requested && session.provider_refresh_token && session.access_token) setGoogleProviderSession({ userId: session.user.id, refreshToken: session.provider_refresh_token, authToken: session.access_token });
   };
+  const lectures = useLectures({ ownerId: user?.id ?? null, isOffline, stateRef, setState, isCurrent: () => !!userRef.current && userRef.current.id === user?.id && offlineRef.current === isOffline && workspaceOwner.current === (isOffline ? null : user?.id) });
   const focus = useFocusTimer(user?.id || null);
   const taskNotifications = useTaskNotifications(state.tasks, user?.id || null);
 
@@ -255,6 +265,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       meetings: readLS<Meeting[]>(LS.meetings, []),
       danteHistory: readLS<DanteMessage[]>(LS.dante, []),
       danteMemory: recentMemory(readLS(LS.memory, []), MEMORY_LIMIT),
+      lectures: [],
       completionLog: readLS<string[]>(LS.completion, []),
     }));
   };
@@ -1022,6 +1033,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     <ZenosContext.Provider
       value={{
         state,
+        ...lectures,
         focusSession: focus.focusSession,
         startTaskFocus: id => { const task = stateRef.current.tasks.find(t => t.id === id); if (task) focus.startFocus(task); },
         stopTaskFocus: focus.stopFocus,

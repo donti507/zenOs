@@ -12,6 +12,7 @@ const SUBTITLES: Record<string, string> = {
   '/tasks': 'Every task',
   '/board': 'Kanban',
   '/calendar': 'Month view',
+  '/lectures': 'Record & study',
   '/meetings': 'Schedule & live notes',
   '/analytics': 'Your progress',
   '/vault': 'Links & files',

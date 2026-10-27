@@ -438,7 +438,11 @@ BEGIN
   IF to_regprocedure('realtime.broadcast_changes(text,text,text,text,text,record,record,text)') IS NULL THEN
     RAISE EXCEPTION 'Supabase Realtime Broadcast database support must be enabled first';
   END IF;
-  ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+  -- Supabase owns this managed table and normally enables RLS already.
+  -- Avoid ALTER TABLE when it is unnecessary: the SQL Editor role may not own it.
+  IF NOT (SELECT relrowsecurity FROM pg_catalog.pg_class WHERE oid = 'realtime.messages'::regclass) THEN
+    ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+  END IF;
   DROP POLICY IF EXISTS zenos_workspace_receive ON realtime.messages;
   CREATE POLICY zenos_workspace_receive ON realtime.messages FOR SELECT TO authenticated
     USING (extension = 'broadcast' AND topic = 'zenos:workspace:' || (SELECT auth.uid())::text AND (SELECT realtime.topic()) = topic);
@@ -457,6 +461,10 @@ BEGIN
     EXECUTE format('DROP TRIGGER IF EXISTS zenos_workspace_broadcast ON public.%I', table_name);
     EXECUTE format('CREATE TRIGGER zenos_workspace_broadcast AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.broadcast_workspace_change()', table_name);
   END LOOP;
+EXCEPTION WHEN insufficient_privilege THEN
+  -- This subtransaction rolls back ALL policy/trigger changes together. Never
+  -- install publishers without their private-channel authorization policies.
+  RAISE WARNING 'Workspace Realtime setup was not applied: the SQL Editor role cannot manage realtime.messages. Other migrations will continue. Ask the Supabase project administrator to apply this Realtime block with an authorized role; see docs/REALTIME.md.';
 END;
 $$;
 
@@ -515,3 +523,83 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.remember_dante_fact(text,uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.remember_dante_fact(text,uuid) TO authenticated;
+
+-- Saved lecture study guides (audio remains temporary and is never stored here).
+CREATE OR REPLACE FUNCTION public.valid_lecture_content(points jsonb, cards jsonb, actions jsonb)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path = '' AS $$
+DECLARE item jsonb;
+BEGIN
+  IF jsonb_typeof(points) IS DISTINCT FROM 'array' OR jsonb_typeof(cards) IS DISTINCT FROM 'array' OR jsonb_typeof(actions) IS DISTINCT FROM 'array' THEN RETURN false; END IF;
+  IF jsonb_array_length(points) NOT BETWEEN 1 AND 20 OR jsonb_array_length(cards) <> 10 OR jsonb_array_length(actions) > 20 THEN RETURN false; END IF;
+  FOR item IN SELECT value FROM jsonb_array_elements(points) LOOP
+    IF jsonb_typeof(item) IS DISTINCT FROM 'string' OR char_length(btrim(item #>> '{}')) NOT BETWEEN 1 AND 500 THEN RETURN false; END IF;
+  END LOOP;
+  FOR item IN SELECT value FROM jsonb_array_elements(cards) LOOP
+    IF jsonb_typeof(item->'question') IS DISTINCT FROM 'string' OR jsonb_typeof(item->'answer') IS DISTINCT FROM 'string'
+      OR char_length(btrim(item->>'question')) NOT BETWEEN 1 AND 300 OR char_length(btrim(item->>'answer')) NOT BETWEEN 1 AND 1000
+      OR (item ? 'known' AND jsonb_typeof(item->'known') NOT IN ('boolean','null')) THEN RETURN false; END IF;
+  END LOOP;
+  FOR item IN SELECT value FROM jsonb_array_elements(actions) LOOP
+    IF jsonb_typeof(item->'title') IS DISTINCT FROM 'string' OR char_length(btrim(item->>'title')) NOT BETWEEN 1 AND 200
+      OR (item ? 'task_id' AND jsonb_typeof(item->'task_id') NOT IN ('string','null')) OR length(item->>'task_id') > 64 THEN RETURN false; END IF;
+  END LOOP;
+  RETURN true;
+END;
+$$;
+CREATE TABLE IF NOT EXISTS public.lectures (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title text NOT NULL CHECK (char_length(btrim(title)) BETWEEN 1 AND 200),
+  duration_seconds double precision NOT NULL CHECK (duration_seconds > 0 AND duration_seconds <= 3600),
+  transcript text NOT NULL CHECK (char_length(btrim(transcript)) BETWEEN 1 AND 200000),
+  summary text NOT NULL CHECK (char_length(btrim(summary)) BETWEEN 1 AND 4000),
+  key_points jsonb NOT NULL,
+  flashcards jsonb NOT NULL,
+  action_items jsonb NOT NULL DEFAULT '[]'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (public.valid_lecture_content(key_points, flashcards, action_items))
+);
+CREATE INDEX IF NOT EXISTS lectures_user_recent_idx ON public.lectures(user_id, created_at DESC);
+ALTER TABLE public.lectures ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.lectures FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.lectures TO authenticated, service_role;
+DROP POLICY IF EXISTS lectures_own ON public.lectures;
+CREATE POLICY lectures_own ON public.lectures FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+CREATE OR REPLACE FUNCTION public.review_lecture_card(p_lecture_id uuid, p_index integer, p_known boolean)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE saved public.lectures%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL OR p_index IS NULL OR p_index NOT BETWEEN 0 AND 9 OR p_known IS NULL THEN RAISE EXCEPTION 'Invalid review'; END IF;
+  SELECT * INTO saved FROM public.lectures WHERE id = p_lecture_id AND user_id = auth.uid() FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Lecture not found'; END IF;
+  UPDATE public.lectures SET flashcards = jsonb_set(flashcards, ARRAY[p_index::text,'known'], to_jsonb(p_known), true)
+    WHERE id = saved.id RETURNING * INTO saved;
+  RETURN to_jsonb(saved);
+END;
+$$;
+REVOKE ALL ON FUNCTION public.review_lecture_card(uuid,integer,boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.review_lecture_card(uuid,integer,boolean) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.add_lecture_task(p_lecture_id uuid, p_index integer, p_date date)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE saved public.lectures%ROWTYPE; item jsonb; added public.tasks%ROWTYPE; category text;
+BEGIN
+  IF auth.uid() IS NULL OR p_index IS NULL OR p_index < 0 OR p_date IS NULL OR abs(p_date - (now() AT TIME ZONE 'UTC')::date) > 1 THEN RAISE EXCEPTION 'Invalid lecture action'; END IF;
+  SELECT * INTO saved FROM public.lectures WHERE id = p_lecture_id AND user_id = auth.uid() FOR UPDATE;
+  IF NOT FOUND OR p_index >= jsonb_array_length(saved.action_items) THEN RAISE EXCEPTION 'Lecture action not found'; END IF;
+  item := saved.action_items->p_index;
+  IF item->>'task_id' IS NOT NULL THEN
+    SELECT * INTO added FROM public.tasks WHERE user_id = auth.uid() AND id::text = item->>'task_id';
+    IF FOUND THEN RETURN jsonb_build_object('lecture',to_jsonb(saved),'task',to_jsonb(added)); END IF;
+  END IF;
+  SELECT id::text INTO category FROM public.categories WHERE user_id = auth.uid() ORDER BY (lower(label) = 'other') DESC,id LIMIT 1;
+  INSERT INTO public.tasks(user_id,title,cat,status,date,reminder,note,progress,steps)
+    VALUES(auth.uid(),item->>'title',coalesce(category,'other'),'todo',p_date::text,'','From lecture: ' || saved.title,0,'[]') RETURNING * INTO added;
+  UPDATE public.lectures SET action_items = jsonb_set(action_items, ARRAY[p_index::text,'task_id'], to_jsonb(added.id::text), true)
+    WHERE id = saved.id RETURNING * INTO saved;
+  RETURN jsonb_build_object('lecture',to_jsonb(saved),'task',to_jsonb(added));
+END;
+$$;
+REVOKE ALL ON FUNCTION public.add_lecture_task(uuid,integer,date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.add_lecture_task(uuid,integer,date) TO authenticated;
