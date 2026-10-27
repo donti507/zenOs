@@ -30,6 +30,7 @@ export default function Space() {
     user,
     isOffline,
     spacePages,
+    changeSpaceWidget,
     spacePagesLoading,
     spacePagesError,
     refreshSpacePages,
@@ -268,6 +269,14 @@ export default function Space() {
         >
           Refresh
         </button>
+        {snapshot && <details className="relative">
+          <summary className={`${btn.secondary} cursor-pointer`}>Page menu</summary>
+          <div className={`${card} absolute z-10 mt-2 p-3 min-w-52 space-y-2`}>
+            {spacePages.find(page => page.id === snapshot.page.id)?.dashboardSize ?
+              <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"unpin"))}>Unpin from Home</button> :
+              <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"small"))}>Pin to Home</button>}
+          </div>
+        </details>}
         {busy && (
           <button
             className={btn.secondary}

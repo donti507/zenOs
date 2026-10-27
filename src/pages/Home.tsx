@@ -1,3 +1,4 @@
+import SpaceWidgets from '../components/SpaceWidgets';
 import SnapSyllabus from '../components/SnapSyllabus';
 import PostponedTasks from '../components/PostponedTasks';
 import { useMemo, useState } from 'react';
@@ -183,6 +184,7 @@ export default function Home() {
         </div>
       </motion.section>
 
+      <SpaceWidgets />
       <PostponedTasks />
 
       {/* Dante command center */}

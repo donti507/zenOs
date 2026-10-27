@@ -3,7 +3,7 @@ import { useZenos } from "../context/ZenosContext";
 import type { SpaceSnapshot } from "../../shared/space";
 import { spaceBridgeData, spaceSrcdoc } from "../lib/spaceSandbox";
 import { btn } from "./ui/kit";
-export default function SpaceFrame({ snapshot }: { snapshot: SpaceSnapshot }) {
+export default function SpaceFrame({ snapshot, widgetSize }: { snapshot: SpaceSnapshot; widgetSize?: "small" | "medium" }) {
   const { state, stateRef, googleEvents, user, checkSpaceAccess } = useZenos();
   const events = useRef(googleEvents);
   events.current = googleEvents;
@@ -178,12 +178,12 @@ export default function SpaceFrame({ snapshot }: { snapshot: SpaceSnapshot }) {
           allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; payment 'none'; fullscreen 'none'"
           srcDoc={doc}
           onLoad={loaded}
-          className="w-full h-[60dvh] min-h-80 rounded-xl border border-outline-variant bg-surface-container-lowest"
+          className={`w-full ${widgetSize === "small" ? "h-64" : widgetSize === "medium" ? "h-96" : "h-[60dvh] min-h-80"} rounded-xl border border-outline-variant bg-surface-container-lowest`}
         />
       )}
       <p className="text-xs text-on-surface-variant">
         Private sandbox · No app, account or token access. Data access is off
-        unless you grant it below.
+        unless you grant it in the page editor.
       </p>
     </section>
   );

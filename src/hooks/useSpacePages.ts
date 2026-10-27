@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import {
   changeLocalSpace,
+  changeLocalSpaceWidget,
   createLocalSpace,
   listLocalSpaces,
   localSpaceHistory,
@@ -111,6 +112,7 @@ export function useSpacePages(options: Options) {
   }, [options.ownerId, options.isOffline, refreshSpacePages]);
   const loadSpacePage = useCallback(
     async (slug: string): Promise<SpaceSnapshot> => {
+      const readSequence = sequence.current;
       spaceSlug(slug);
       if (!current()) throw new Error("Your account changed.");
       let snapshot: SpaceSnapshot;
@@ -134,7 +136,7 @@ export function useSpacePages(options: Options) {
         snapshot = spaceSnapshot(result.data);
       }
       if (!current()) throw new Error("Your account changed.");
-      cache(snapshot.page);
+      if (readSequence === sequence.current) cache(snapshot.page);
       return snapshot;
     },
     [options.ownerId, options.isOffline],
@@ -453,7 +455,22 @@ export function useSpacePages(options: Options) {
     },
     [options.ownerId, options.isOffline],
   );
+  const changeSpaceWidget = useCallback(async (id: string, action: import('../../shared/space').SpaceWidgetAction) => {
+    if (!current()) throw new Error("Your account changed.");
+    let pages: SpacePage[];
+    if (options.isOffline) pages = await changeLocalSpaceWidget(id, action);
+    else {
+      const {data,error} = await supabase.rpc('change_space_widget',{p_page_id:id,p_action:action});
+      if (error) throw new Error("Could not save dashboard layout. Apply the latest migration and try again.");
+      pages = (data || []).map(spacePageFromRow);
+    }
+    if (!current()) throw new Error("Your account changed.");
+    ++sequence.current;
+    setLoading(false);
+    setPages(pages);
+  }, [options.ownerId,options.isOffline]);
   return {
+    changeSpaceWidget,
     spacePages,
     spacePagesLoading,
     spacePagesError,

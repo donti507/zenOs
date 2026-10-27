@@ -131,6 +131,29 @@ it("rejects oversized code without adding history or changing current state", as
     (await db.query("SELECT * FROM space_page_versions")).rows,
   ).toHaveLength(3);
 });
+it("persists private widget sizes/order without changing code, history or grants", async () => {
+  const second="10000000-0000-0000-0000-000000000002";
+  await db.query("SELECT create_space_page($1,'second','Second',gen_random_uuid())",[second]);
+  await db.query("SELECT set_space_permissions($1,$2,true,false)",[page,restore]);
+  const change=(id:string,action:string)=>db.query<any>("SELECT * FROM change_space_widget($1,$2)",[id,action]);
+  await change(page,'small'); await change(second,'medium'); await change(second,'earlier');
+  let rows=(await db.query<any>("SELECT * FROM space_pages WHERE dashboard_size IS NOT NULL ORDER BY dashboard_order,id")).rows;
+  expect(rows.map(row=>row.id)).toEqual([second,page]);
+  expect(rows.map(row=>row.dashboard_size)).toEqual(['medium','small']);
+  await change(page,'medium');
+  expect((await snapshot()).page.permissions).toEqual({tasks:true,events:false});
+  expect((await snapshot()).page.current_version_id).toBe(restore);
+  expect((await db.query("SELECT * FROM space_page_versions WHERE page_id=$1",[page])).rows).toHaveLength(3);
+  await expect(change(page,'large')).rejects.toThrow('Invalid widget');
+  await db.query("SELECT set_config('test.uid',$1,false)",[b]);
+  await expect(change(page,'unpin')).rejects.toThrow('Page not found');
+  await db.exec('RESET ROLE; SET ROLE anon');
+  await expect(change(page,'small')).rejects.toThrow('permission denied');
+  await db.exec('RESET ROLE; SET ROLE authenticated');
+  await db.query("SELECT set_config('test.uid',$1,false)",[a]);
+  await change(page,'unpin');
+  expect((await snapshot()).page.dashboard_size).toBeNull();
+});
 it("isolates owners and anonymous access, permits per-user slugs and cascades page/history deletion", async () => {
   await db.query("SELECT set_config('test.uid',$1,false)", [b]);
   expect((await db.query("SELECT * FROM space_pages")).rows).toHaveLength(0);
