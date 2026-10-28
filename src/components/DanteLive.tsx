@@ -1,3 +1,5 @@
+import {localizedAction} from '../i18n/actions';
+import {tr,useUiLanguage,speechLocale} from '../i18n';
 import {createLiveSpeech} from '../lib/liveSpeech';
 import {DANTE_VOICE_PREFS_KEY,loadDanteVoicePreferences,loadDanteVoiceLanguage,pickDanteVoice,type DanteVoicePreferences} from '../lib/danteVoice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -59,13 +61,14 @@ function useMicLevel(active: boolean) {
 const VOICE_LANGS = [
   { code: 'en-US', label: 'English' },
   { code: 'pl-PL', label: 'Polski' },
-  { code: 'de-DE', label: 'Deutsch' },
-  { code: 'es-ES', label: 'Español' },
-  { code: 'fr-FR', label: 'Français' },
+  { code: 'de-DE', get label(){return tr("Deutsch");} },
+  { code: 'es-ES', get label(){return tr("Español");} },
+  { code: 'fr-FR', get label(){return tr("Français");} },
   { code: 'uk-UA', label: 'Українська' },
 ];
 
 export default function DanteLive() {
+  const uiLanguage=useUiLanguage();
   const {
     liveOpen, setLiveOpen, stateRef, user, isOffline, activeWorkspaceId, googleEvents, getAuthToken, saveDanteMessage,
     addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
@@ -74,7 +77,7 @@ export default function DanteLive() {
   const location = useLocation();
   const pageSlug = activeWorkspaceId?null:spaceVoiceSlug(location.pathname);
   const activePage = (spacePages || []).find(page => page.slug === pageSlug);
-  const voiceScope = useMemo(() => ({pathname: location.pathname, owner: user?.id, isOffline, activeWorkspaceId, pageId: activePage?.id}), [location.pathname, location.key, user?.id, isOffline, activeWorkspaceId, activePage?.id]);
+  const voiceScope = useMemo(() => ({pathname: location.pathname, owner: user?.id, isOffline, activeWorkspaceId,uiLanguage, pageId: activePage?.id}), [location.pathname, location.key, user?.id, isOffline, activeWorkspaceId,uiLanguage, activePage?.id]);
   const scopeRef = useRef(voiceScope); scopeRef.current = voiceScope;
   const captureRef = useRef<typeof voiceScope | null>(null);
   const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,6 +94,8 @@ export default function DanteLive() {
   const [showSettings, setShowSettings] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [lang, setLang] = useState<string>(loadDanteVoiceLanguage);
+  const previousUiLanguage=useRef(uiLanguage);
+  useEffect(()=>{if(previousUiLanguage.current!==uiLanguage){previousUiLanguage.current=uiLanguage;setLang(speechLocale());}},[uiLanguage]);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   const phaseRef = useRef(phase); phaseRef.current = phase;
@@ -342,10 +347,10 @@ export default function DanteLive() {
               {status?.model && <span className="text-[12px] text-white/50 hidden sm:inline">· {status.model}</span>}
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={() => setShowSettings(s => !s)} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer" aria-label="Voice settings" aria-expanded={showSettings}>
+              <button onClick={() => setShowSettings(s => !s)} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer" aria-label={tr("Voice settings")} aria-expanded={showSettings}>
                 <Icon name="tune" className="text-[22px]" />
               </button>
-              <button onClick={close} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer" aria-label="Close Dante Live">
+              <button onClick={close} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center cursor-pointer" aria-label={tr("Close Dante Live")}>
                 <Icon name="close" className="text-[22px]" />
               </button>
             </div>
@@ -354,42 +359,42 @@ export default function DanteLive() {
           {showSettings && (
             <div className="relative mx-auto w-full max-w-md px-5">
               <div className="rounded-2xl bg-white/10 backdrop-blur-xl p-4 flex flex-col gap-3 text-[14px]">
-                {status?.tts&&!isOffline&&<p className="text-xs rounded-lg bg-surface-container text-on-surface-variant px-3 py-2">Server voice enabled. Spoken replies are sent to the configured speech provider.</p>}
+                {status?.tts&&!isOffline&&<p className="text-xs rounded-lg bg-surface-container text-on-surface-variant px-3 py-2">{tr("Server voice enabled. Spoken replies are sent to the configured speech provider.")}</p>}
                 <label className="flex items-center justify-between gap-3">
-                  <span className="text-white/70">Language</span>
+                  <span className="text-white/70">{tr("Language")}</span>
                   <select value={lang} onChange={e => setLang(e.target.value)} className="bg-white/10 rounded-lg px-2 py-1.5 outline-none">
                     {VOICE_LANGS.map(l => <option key={l.code} value={l.code} className="text-black">{l.label}</option>)}
                   </select>
                 </label>
                 <label className="flex items-center justify-between gap-3">
-                  <span className="text-white/70">{status?.tts&&!isOffline?'Browser fallback voice':'Voice'}</span>
+                  <span className="text-white/70">{status?.tts&&!isOffline?tr("Browser fallback voice"):tr("Voice")}</span>
                   <select value={prefs.voiceURI} onChange={e => setPrefs({ ...prefs, voiceURI: e.target.value })} className="bg-white/10 rounded-lg px-2 py-1.5 outline-none max-w-[220px]">
-                    <option value="" className="text-black">Automatic</option>
+                    <option value="" className="text-black">{tr("Automatic")}</option>
                     {langVoices.map(v => <option key={v.voiceURI} value={v.voiceURI} className="text-black">{v.name}</option>)}
                   </select>
                 </label>
                 <label className="flex items-center justify-between gap-3">
-                  <span className="text-white/70">Speed</span>
+                  <span className="text-white/70">{tr("Speed")}</span>
                   <input type="range" min={0.8} max={1.4} step={0.05} value={prefs.rate} onChange={e => setPrefs({ ...prefs, rate: Number(e.target.value) })} className="w-40 accent-white" />
                 </label>
                 <label className="flex items-center justify-between gap-3 cursor-pointer">
-                  <span className="text-white/70">Interrupt by speaking <span className="text-white/40">(use headphones)</span></span>
+                  <span className="text-white/70">{tr("Interrupt by speaking ")}<span className="text-white/40">{tr("(use headphones)")}</span></span>
                   <input type="checkbox" checked={prefs.bargeIn} onChange={e => setPrefs({ ...prefs, bargeIn: e.target.checked })} className="w-4 h-4 accent-white" />
                 </label>
               </div>
             </div>
           )}
 
-          {pageSlug && <p className="relative mx-5 rounded-xl bg-surface-container px-4 py-3 text-sm text-on-surface text-center break-words" role="status">Editing “{pageTitle}” · Voice instructions change this page and save a version.</p>}
-          {voiceNotice&&<p className="relative mx-5 rounded-xl bg-surface-container px-4 py-3 text-sm text-on-surface-variant text-center break-words" role="status">{voiceNotice}</p>}
+          {pageSlug && <p className="relative mx-5 rounded-xl bg-surface-container px-4 py-3 text-sm text-on-surface text-center break-words" role="status">{tr("Editing “")}{pageTitle}{tr("” · Voice instructions change this page and save a version.")}</p>}
+          {voiceNotice&&<p className="relative mx-5 rounded-xl bg-surface-container px-4 py-3 text-sm text-on-surface-variant text-center break-words" role="status">{tr(voiceNotice)}</p>}
           {/* Centre: orb + captions */}
           <div className="relative flex-1 flex flex-col items-center justify-center gap-10 px-6">
-            <button onClick={tap} className="rounded-full cursor-pointer focus-visible:outline-white" aria-label={label}>
+            <button onClick={tap} className="rounded-full cursor-pointer focus-visible:outline-white" aria-label={tr(label)}>
               <DanteOrb size={190} state={orbState} level={phase === 'listening' ? level : 0} />
             </button>
 
             <div className="text-center max-w-2xl min-h-[140px] flex flex-col items-center gap-3" aria-live="polite">
-              <div className={`text-[15px] font-medium ${error ? 'text-red-300' : 'text-white/60'}`}>{error || label}</div>
+              <div className={`text-[15px] font-medium ${error ? 'text-red-300' : 'text-white/60'}`}>{tr(error || label)}</div>
               {heard && <p className="text-white/50 text-[16px]">“{heard}”</p>}
               {reply && (
                 <motion.p key={heard} initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="text-[20px] md:text-[24px] leading-snug font-medium text-white max-h-[30vh] overflow-y-auto">
@@ -400,12 +405,12 @@ export default function DanteLive() {
                 <div className="flex flex-wrap justify-center gap-2 pt-1">
                   {results.map((r, i) => (
                     <span key={i} className={`flex items-center gap-1 px-3 py-1 rounded-full text-[13px] ${r.ok ? 'bg-emerald-400/15 text-emerald-200' : 'bg-red-400/15 text-red-200'}`}>
-                      <Icon name={r.ok ? 'check_circle' : 'error'} className="text-[16px]" />{r.label}{r.detail ? ` — ${r.detail}` : ''}
+                      <Icon name={r.ok ? 'check_circle' : 'error'} className="text-[16px]" />{localizedAction(r.label)}{r.detail ? ` — ${localizedAction(r.detail)}` : ''}
                     </span>
                   ))}
                 </div>
               )}
-              {noMic && <p className="text-red-300 text-[14px]">This browser can’t use the microphone here. Use Chrome or Edge on localhost or HTTPS.</p>}
+              {noMic && <p className="text-red-300 text-[14px]">{tr("This browser can’t use the microphone here. Use Chrome or Edge on localhost or HTTPS.")}</p>}
             </div>
           </div>
 
@@ -414,16 +419,15 @@ export default function DanteLive() {
             <button
               onClick={() => { const p = !paused; setPaused(p); if (p) { captureRef.current = null; mic.cancel(); setPhase('idle'); } else scheduleListen(0); }}
               className={`w-14 h-14 rounded-full flex items-center justify-center cursor-pointer transition-colors ${paused ? 'bg-white text-[#07071a]' : 'bg-white/10 hover:bg-white/20'}`}
-              aria-label={paused ? 'Unmute microphone' : 'Mute microphone'}
+              aria-label={paused ? tr("Unmute microphone") : tr("Mute microphone")}
               aria-pressed={paused}
             >
               <Icon name={paused ? 'mic_off' : 'mic'} className="text-[26px]" />
             </button>
-            <button onClick={close} className="h-14 px-7 rounded-full bg-red-500 hover:bg-red-600 flex items-center gap-2 font-semibold cursor-pointer" aria-label="End Dante Live">
-              <Icon name="call_end" className="text-[24px]" />End
-            </button>
+            <button onClick={close} className="h-14 px-7 rounded-full bg-red-500 hover:bg-red-600 flex items-center gap-2 font-semibold cursor-pointer" aria-label={tr("End Dante Live")}>
+              <Icon name="call_end" className="text-[24px]" />{tr("End")}</button>
           </div>
-          <p className="relative text-center text-[12px] text-white/40 pb-4 hidden md:block">Space: talk / interrupt · Esc: close · {pageSlug ? 'Edits are saved in this page’s timeline' : 'Conversation is saved in the Dante chat'}</p>
+          <p className="relative text-center text-[12px] text-white/40 pb-4 hidden md:block">{tr("Space: talk / interrupt · Esc: close · ")}{pageSlug ? tr("Edits are saved in this page’s timeline") : tr("Conversation is saved in the Dante chat")}</p>
         </motion.div>
       )}
     </AnimatePresence>

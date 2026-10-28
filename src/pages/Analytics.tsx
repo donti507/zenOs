@@ -1,3 +1,4 @@
+import {tr,useUiLanguage,uiLocale,quantity} from '../i18n';
 import { useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +8,7 @@ import { PageHeader, Icon, Segmented, btn, card } from '../components/ui/kit';
 import DanteOrb from '../components/DanteOrb';
 
 export default function Analytics() {
+  useUiLanguage();
   const { state } = useZenos();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
@@ -66,36 +68,36 @@ export default function Analytics() {
   });
 
   const stats = [
-    { icon: 'task_alt', tone: 'text-success', label: `Done (${days} days)`, value: data.total, sub: change === null ? 'No earlier data' : `${change >= 0 ? '+' : ''}${change}% vs previous ${days} days` },
+    { icon: 'task_alt', tone: 'text-success', label: tr('Done ({{0}} days)',days), value: data.total, sub: change === null ? 'No earlier data' : tr('{{0}}{{1}}% vs previous {{2}} days',change>=0?'+':'',change,days) },
     { icon: 'local_fire_department', tone: 'text-warning', label: 'Current streak', value: `${streak}d`, sub: streak ? 'Keep it going' : 'Complete a task today to start one' },
-    { icon: 'pending_actions', tone: 'text-primary', label: 'Open tasks', value: data.open, sub: data.overdue ? `${data.overdue} overdue` : 'Nothing overdue' },
-    { icon: 'timer', tone: 'text-tertiary', label: 'Meeting time', value: `${data.meetingMinutes}m`, sub: (n => `${n} meeting${n === 1 ? '' : 's'} logged`)((state.meetings || []).filter(m => m.status === 'completed').length) },
+    { icon: 'pending_actions', tone: 'text-primary', label: 'Open tasks', value: data.open, sub: data.overdue ? tr('{{0}} overdue',data.overdue) : 'Nothing overdue' },
+    { icon: 'timer', tone: 'text-tertiary', label: 'Meeting time', value: `${data.meetingMinutes}m`, sub: (n => tr('{{0}} logged',quantity(n,'meeting')))((state.meetings || []).filter(m => m.status === 'completed').length) },
   ];
 
   return (
     <div>
       <PageHeader
-        title="Analytics"
-        subtitle="How your week is going, from your real completions."
-        actions={<Segmented label="Range" value={range} onChange={setRange} options={[{ value: '7', label: '7 days' }, { value: '30', label: '30 days' }]} />}
+        title={tr("Analytics")}
+        subtitle={tr("How your week is going, from your real completions.")}
+        actions={<Segmented label={tr("Range")} value={range} onChange={setRange} options={[{ value: '7', label: tr("7 days") }, { value: '30', label: tr("30 days") }]} />}
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         {stats.map((s, i) => (
-          <motion.div key={s.label} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className={`${card} p-4`}>
-            <div className="flex items-center gap-2 text-[12px] text-on-surface-variant font-medium"><Icon name={s.icon} className={`text-[18px] ${s.tone}`} />{s.label}</div>
+          <motion.div key={tr(s.label)} initial={reduce ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className={`${card} p-4`}>
+            <div className="flex items-center gap-2 text-[12px] text-on-surface-variant font-medium"><Icon name={s.icon} className={`text-[18px] ${s.tone}`} />{tr(s.label)}</div>
             <div className="text-[28px] leading-9 font-semibold tracking-tight text-on-surface mt-1">{s.value}</div>
-            <div className={`text-[12px] ${s.label === 'Open tasks' && data.overdue ? 'text-error' : 'text-on-surface-variant'}`}>{s.sub}</div>
+            <div className={`text-[12px] ${s.label === 'Open tasks' && data.overdue ? 'text-error' : 'text-on-surface-variant'}`}>{tr(s.sub)}</div>
           </motion.div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mb-5">
         {/* Bar chart */}
-        <section className={`${card} p-5 xl:col-span-2`} aria-label="Completed tasks per day">
+        <section className={`${card} p-5 xl:col-span-2`} aria-label={tr("Completed tasks per day")}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-on-surface">Completed per day</h2>
-            <span className="text-[12px] text-on-surface-variant">Best day: {data.best}</span>
+            <h2 className="font-semibold text-on-surface">{tr("Completed per day")}</h2>
+            <span className="text-[12px] text-on-surface-variant">{tr("Best day: ")}{data.best}</span>
           </div>
           <div className="flex items-end gap-1.5 h-48" role="img" aria-label={data.series.map(s => `${s.date}: ${s.count}`).join(', ')}>
             {data.series.map((s, i) => (
@@ -109,7 +111,7 @@ export default function Analytics() {
                 />
                 {(days === 7 || i % 5 === 0 || i === days - 1) && (
                   <span className="text-[11px] text-on-surface-variant whitespace-nowrap">
-                    {new Date(s.date + 'T00:00').toLocaleDateString('en-GB', days === 7 ? { weekday: 'short' } : { day: 'numeric', month: 'short' })}
+                    {new Date(s.date + 'T00:00').toLocaleDateString(uiLocale(), days === 7 ? { weekday: 'short' } : { day: 'numeric', month: 'short' })}
                   </span>
                 )}
               </div>
@@ -118,10 +120,10 @@ export default function Analytics() {
         </section>
 
         {/* Category donut */}
-        <section className={`${card} p-5`} aria-label="Tasks by category">
-          <h2 className="font-semibold text-on-surface mb-4">By category</h2>
+        <section className={`${card} p-5`} aria-label={tr("Tasks by category")}>
+          <h2 className="font-semibold text-on-surface mb-4">{tr("By category")}</h2>
           {segments.length === 0 ? (
-            <p className="text-[13px] text-on-surface-variant py-10 text-center">No tasks yet.</p>
+            <p className="text-[13px] text-on-surface-variant py-10 text-center">{tr("No tasks yet.")}</p>
           ) : (
             <div className="flex flex-col items-center gap-4">
               <div className="relative w-36 h-36">
@@ -134,7 +136,7 @@ export default function Analytics() {
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <span className="text-[22px] font-semibold text-on-surface">{data.rate}%</span>
-                  <span className="text-[11px] text-on-surface-variant">complete</span>
+                  <span className="text-[11px] text-on-surface-variant">{tr("complete")}</span>
                 </div>
               </div>
               <ul className="w-full flex flex-col gap-2">
@@ -142,7 +144,7 @@ export default function Analytics() {
                   <li key={s.cat.id} className="flex items-center gap-2 text-[13px]">
                     <span className={`w-2.5 h-2.5 rounded-full ${categoryTone(s.cat).dot}`} />
                     <span className="flex-1 text-on-surface">{s.cat.label}</span>
-                    <span className="text-on-surface-variant">{s.done}/{s.open + s.done} done</span>
+                    <span className="text-on-surface-variant">{s.done}/{s.open + s.done}{tr(" done")}</span>
                   </li>
                 ))}
               </ul>
@@ -153,12 +155,10 @@ export default function Analytics() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         {/* Heatmap */}
-        <section className={`${card} p-5 xl:col-span-2 overflow-x-auto`} aria-label="Activity over the last 12 weeks">
+        <section className={`${card} p-5 xl:col-span-2 overflow-x-auto`} aria-label={tr("Activity over the last 12 weeks")}>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-on-surface">Last 12 weeks</h2>
-            <div className="flex items-center gap-1 text-[11px] text-on-surface-variant">Less
-              {[0, 1, 2, 4].map(n => <span key={n} className={`w-3 h-3 rounded-[3px] ${heatLevel(n)}`} />)}More
-            </div>
+            <h2 className="font-semibold text-on-surface">{tr("Last 12 weeks")}</h2>
+            <div className="flex items-center gap-1 text-[11px] text-on-surface-variant">{tr("Less")}{[0, 1, 2, 4].map(n => <span key={n} className={`w-3 h-3 rounded-[3px] ${heatLevel(n)}`} />)}{tr("More")}</div>
           </div>
           <div className="flex gap-1">
             <div className="flex flex-col gap-1 mr-1 text-[10px] text-on-surface-variant">
@@ -167,7 +167,7 @@ export default function Analytics() {
             {heat.map((week, w) => (
               <div key={w} className="flex flex-col gap-1">
                 {week.map(c => (
-                  <span key={c.key} title={`${c.key}: ${c.n} completed`} className={`w-3.5 h-3.5 rounded-[3px] ${c.future ? 'opacity-0' : heatLevel(c.n)} ${c.key === todayStr ? 'ring-1 ring-on-surface' : ''}`} />
+                  <span key={c.key} title={tr("{{0}}: {{1}} completed",c.key,c.n)} className={`w-3.5 h-3.5 rounded-[3px] ${c.future ? 'opacity-0' : heatLevel(c.n)} ${c.key === todayStr ? 'ring-1 ring-on-surface' : ''}`} />
                 ))}
               </div>
             ))}
@@ -178,21 +178,20 @@ export default function Analytics() {
         <section className={`${card} p-5 flex flex-col gap-3`}>
           <div className="flex items-center gap-3">
             <DanteOrb size={36} />
-            <h2 className="font-semibold text-on-surface">Insight from Dante</h2>
+            <h2 className="font-semibold text-on-surface">{tr("Insight from Dante")}</h2>
           </div>
           <p className="text-[13px] text-on-surface-variant">
             {data.overdue
-              ? `${data.overdue} task${data.overdue > 1 ? 's are' : ' is'} overdue. Dante can suggest new dates or break them into smaller steps.`
+              ? tr("{{0}} task{{1}} overdue. Dante can suggest new dates or break them into smaller steps.",data.overdue,data.overdue > 1 ? 's are' : ' is')
               : data.total
-                ? `You finished ${data.total} task${data.total > 1 ? 's' : ''} in the last ${days} days${change !== null ? ` (${change >= 0 ? 'up' : 'down'} ${Math.abs(change)}%)` : ''}. Ask Dante what's working and what to focus on next.`
-                : 'No completions in this period yet. Ask Dante to help you pick a small first win.'}
+                ? tr("You finished {{0}} task{{1}} in the last {{2}} days{{3}}. Ask Dante what's working and what to focus on next.",data.total,data.total > 1 ? 's' : '',days,change !== null ? ` (${change >= 0 ? 'up' : 'down'} ${Math.abs(change)}%)` : '')
+                : tr("No completions in this period yet. Ask Dante to help you pick a small first win.")}
           </p>
           <button
             className={`${btn.primary} self-start`}
-            onClick={() => navigate('/dante', { state: { prompt: `Analyse my productivity over the last ${days} days: I completed ${data.total} tasks (previous period ${data.prev}), streak ${streak} days, ${data.open} open and ${data.overdue} overdue. Give me 3 specific suggestions.` } })}
+            onClick={() => navigate('/dante', { state: { prompt: tr("Analyse my productivity over the last {{0}} days: I completed {{1}} tasks (previous period {{2}}), streak {{3}} days, {{4}} open and {{5}} overdue. Give me 3 specific suggestions.",days,data.total,data.prev,streak,data.open,data.overdue) } })}
           >
-            <Icon name="auto_awesome" className="text-[18px]" />Get suggestions
-          </button>
+            <Icon name="auto_awesome" className="text-[18px]" />{tr("Get suggestions")}</button>
         </section>
       </div>
     </div>

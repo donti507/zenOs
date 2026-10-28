@@ -1,3 +1,5 @@
+import LanguageSwitcher from '../LanguageSwitcher';
+import {tr,useUiLanguage} from '../../i18n';
 import WorkspaceSwitcher from '../WorkspaceSwitcher';
 import AccountControls from '../AccountControls';
 import { useEffect, useRef, useState } from 'react';
@@ -23,6 +25,7 @@ const SUBTITLES: Record<string, string> = {
 };
 
 export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean }) {
+  useUiLanguage();
   const { state, updateState, toggleTheme, setShowModal, setShowBriefing, googleConnected, getGoogleAccessToken, fetchGoogleEvents, user, setLiveOpen, logOut } = useZenos();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -73,7 +76,7 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
       updateState({ instantMeetEvent: created });
       setShowModal('instantMeetSuccess');
     } catch (err: any) {
-      alert(err?.message || 'Could not create the meeting.');
+      alert(err?.message || tr("Could not create the meeting."));
     } finally {
       setCreatingMeet(false);
     }
@@ -89,7 +92,7 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
         <span className="md:hidden w-7 h-7 rounded-lg bg-[conic-gradient(from_200deg,#5b5fef,#8b5cf6,#06b6d4,#5b5fef)] mr-1 shrink-0" aria-hidden="true" />
         <span className="hidden sm:inline font-medium text-on-surface-variant">{route.label}</span>
         <span className="hidden sm:inline-flex"><span className="material-symbols-outlined text-[14px] text-outline">chevron_right</span></span>
-        <span className="text-[16px] leading-6 font-semibold text-on-surface truncate">{SUBTITLES[route.path] || route.label}</span>
+        <span className="text-[16px] leading-6 font-semibold text-on-surface truncate">{tr(SUBTITLES[route.path] || route.label)}</span>
       </div>
 
       {/* Search / ask Dante */}
@@ -103,43 +106,43 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && ask()}
               className="w-full h-9 pl-9 pr-16 bg-surface-container-low rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:bg-surface-container focus:ring-2 focus:ring-primary/20 transition-colors"
-              placeholder="Ask Dante anything…"
-              aria-label="Ask Dante"
+              placeholder={tr("Ask Dante anything…")}
+              aria-label={tr("Ask Dante")}
               type="text"
             />
             <div className="absolute right-2 flex items-center gap-1.5">
-              <button className="text-on-surface-variant hover:text-primary transition-colors flex items-center cursor-pointer" type="button" onClick={() => setLiveOpen(true)} aria-label="Talk to Dante (Live)">
+              <button className="text-on-surface-variant hover:text-primary transition-colors flex items-center cursor-pointer" type="button" onClick={() => setLiveOpen(true)} aria-label={tr("Talk to Dante (Live)")}>
                 <span className="material-symbols-outlined text-[16px]">mic</span>
               </button>
-              <kbd className="text-[11px] bg-surface-container px-1.5 py-0.5 rounded text-on-surface-variant font-medium">⌘K</kbd>
+              <kbd className="text-[11px] bg-surface-container px-1.5 py-0.5 rounded text-on-surface-variant font-medium">{tr("⌘K")}</kbd>
             </div>
           </div>
         </div>
       )}
 
-      <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+      <div className="flex items-center gap-1 md:gap-2 shrink-0"><LanguageSwitcher />
         <button
           onClick={() => setLiveOpen(true)}
           className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full cursor-pointer transition-colors ${status && !status.ready ? 'bg-error-container text-error' : 'bg-gradient-to-r from-primary-container to-tertiary-container text-white hover:brightness-110 shadow-soft'}`}
-          title={status?.problem || 'Talk to Dante hands-free (Ctrl+Shift+Space)'}
+          title={status?.problem || tr("Talk to Dante hands-free (Ctrl+Shift+Space)")}
         >
           <span className="material-symbols-outlined text-[18px]">{status && !status.ready ? 'error' : 'graphic_eq'}</span>
-          <span className="text-[13px] font-semibold">{status && !status.ready ? 'Dante offline' : 'Live'}</span>
+          <span className="text-[13px] font-semibold">{status && !status.ready ? tr("Dante offline") : tr("Live")}</span>
         </button>
 
         {googleConnected && (
-          <button onClick={instantMeet} disabled={creatingMeet} aria-label="Start an instant meeting" title="Instant meeting"
+          <button onClick={instantMeet} disabled={creatingMeet} aria-label={tr("Start an instant meeting")} title={tr("Instant meeting")}
             className="hidden sm:flex w-9 h-9 items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer disabled:opacity-50">
             <span className="material-symbols-outlined text-[20px]">{creatingMeet ? 'progress_activity' : 'video_call'}</span>
           </button>
         )}
 
-        <button onClick={toggleTheme} aria-label={state.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        <button onClick={toggleTheme} aria-label={state.theme === 'dark' ? tr("Switch to light mode") : tr("Switch to dark mode")}
           className="w-9 h-9 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer">
           <span className="material-symbols-outlined text-[20px]">{state.theme === 'dark' ? 'light_mode' : 'dark_mode'}</span>
         </button>
 
-        <button onClick={() => setShowBriefing(true)} aria-label="Open morning briefing" title="Morning briefing"
+        <button onClick={() => setShowBriefing(true)} aria-label={tr("Open morning briefing")} title={tr("Morning briefing")}
           className="relative w-9 h-9 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer">
           <span className="material-symbols-outlined text-[20px]">notifications</span>
           {state.tasks.some(t => t.status !== 'done' && t.date && t.date < localDateStr()) && (
@@ -150,14 +153,14 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
         <button onClick={() => setShowModal('addTask')}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary-container text-on-primary-container hover:bg-primary hover:text-on-primary font-medium transition-colors shadow-soft cursor-pointer active:scale-[0.98]">
           <span className="material-symbols-outlined text-[18px]">add</span>
-          <span className="hidden sm:inline">New task</span>
+          <span className="hidden sm:inline">{tr("New task")}</span>
         </button>
 
         <div className="relative md:hidden">
-          <button className="w-8 h-8 rounded-full bg-primary text-on-primary font-semibold" aria-label="Account menu" aria-expanded={accountOpen} onClick={() => setAccountOpen(v => !v)}>{name.slice(0, 1).toUpperCase()}</button>
+          <button className="w-8 h-8 rounded-full bg-primary text-on-primary font-semibold" aria-label={tr("Account menu")} aria-expanded={accountOpen} onClick={() => setAccountOpen(v => !v)}>{name.slice(0, 1).toUpperCase()}</button>
           {accountOpen && <div role="menu" className="absolute right-0 top-full mt-2 w-60 max-w-[90vw] bg-surface-container-lowest rounded-xl shadow-lg ring-1 ring-outline-variant py-1">
             <AccountControls />
-            <button role="menuitem" className="w-full px-3 py-2 text-left text-on-surface hover:bg-surface-container" onClick={() => { setAccountOpen(false); logOut(); }}>Sign out</button>
+            <button role="menuitem" className="w-full px-3 py-2 text-left text-on-surface hover:bg-surface-container" onClick={() => { setAccountOpen(false); logOut(); }}>{tr("Sign out")}</button>
           </div>}
         </div>
 

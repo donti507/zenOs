@@ -1,3 +1,4 @@
+import {tr,useUiLanguage} from '../../i18n';
 import React from 'react';
 import { Link } from 'react-router-dom';
 
@@ -17,7 +18,7 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
     const key = `${keyBase}-${i++}`;
     if (tok.startsWith('**')) nodes.push(<strong key={key} className="font-bold text-primary">{tok.slice(2, -2)}</strong>);
     else if (tok.startsWith('`')) nodes.push(<code key={key} className="font-mono text-[12px] px-1 bg-surface-high border border-border">{tok.slice(1, -1)}</code>);
-    else if (tok.startsWith('/search?')) nodes.push(<Link key={key} to={tok} className="underline text-primary break-all">Open source</Link>);
+    else if (tok.startsWith('/search?')) nodes.push(<Link key={key} to={tok} className="underline text-primary break-all">{tr("Open source")}</Link>);
     else if (tok.startsWith('http')) nodes.push(<a key={key} href={tok} target="_blank" rel="noopener noreferrer" className="underline text-secondary break-all">{tok}</a>);
     else nodes.push(<em key={key}>{tok.slice(1, -1)}</em>);
     last = m.index + tok.length;
@@ -27,6 +28,7 @@ function inline(text: string, keyBase: string): React.ReactNode[] {
 }
 
 export default function Markdown({ text }: { text: string }) {
+  useUiLanguage();
   const blocks: React.ReactNode[] = [];
   const lines = text.replace(/\r/g, '').split('\n');
   let i = 0;

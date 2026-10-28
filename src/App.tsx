@@ -1,3 +1,4 @@
+import {tr,useUiLanguage} from './i18n';
 import PersonalSpaceOnly from './components/PersonalSpaceOnly';
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -30,6 +31,7 @@ const Vault = lazy(() => import('./pages/Vault'));
 const DanteAI = lazy(() => import('./components/views/DanteAI'));
 
 export function AppRoutes() {
+  useUiLanguage();
   const { pathname, search: routeSearch } = useLocation();
   const { user, isOffline, activeWorkspaceId, isLoadingData, setShowBriefing, passwordRecovery, setPasswordRecovery } = useZenos();
 
@@ -58,7 +60,7 @@ export function AppRoutes() {
     return (
       <div className="min-h-dvh bg-surface flex flex-col items-center justify-center gap-4">
         <DanteOrb state="thinking" size={56} />
-        <div className="text-on-surface-variant">Loading your workspace…</div>
+        <div className="text-on-surface-variant">{tr('Loading your workspace…')}</div>
       </div>
     );
   }

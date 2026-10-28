@@ -1,3 +1,4 @@
+import {tr,useUiLanguage} from '../../i18n';
 import FocusTimer from '../FocusTimer';
 import TaskNotificationPrompt from '../TaskNotificationPrompt';
 import LocalImportDialog from '../LocalImportDialog';
@@ -17,14 +18,14 @@ const MorningBriefing = lazy(() => import('../MorningBriefing'));
 const DanteLive = lazy(() => import('../DanteLive'));
 
 const MOBILE_TABS = [
-  { to: '/', icon: 'home', label: 'Home' },
-  { to: '/board', icon: 'view_kanban', label: 'Board' },
-  { to: '/space', icon: 'dashboard_customize', label: 'Space' },
-  { to: '/search', icon: 'search', label: 'Search' },
-  { to: '/calendar', icon: 'calendar_today', label: 'Calendar' },
-  { to: '/lectures', icon: 'school', label: 'Lectures' },
-  { to: '/meetings', icon: 'videocam', label: 'Meetings' },
-  { to: '/vault', icon: 'folder_special', label: 'Vault' },
+  { to: '/', icon: 'home', get label(){return tr("Home");} },
+  { to: '/board', icon: 'view_kanban', get label(){return tr("Board");} },
+  { to: '/space', icon: 'dashboard_customize', get label(){return tr("Space");} },
+  { to: '/search', icon: 'search', get label(){return tr("Search");} },
+  { to: '/calendar', icon: 'calendar_today', get label(){return tr("Calendar");} },
+  { to: '/lectures', icon: 'school', get label(){return tr("Lectures");} },
+  { to: '/meetings', icon: 'videocam', get label(){return tr("Meetings");} },
+  { to: '/vault', icon: 'folder_special', get label(){return tr("Vault");} },
 ];
 
 /**
@@ -32,6 +33,7 @@ const MOBILE_TABS = [
  * updateState({ view }) (Dante actions, briefing, modals) still navigates correctly.
  */
 function RouteSync() {
+  useUiLanguage();
   const { state, updateState } = useZenos();
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -64,8 +66,9 @@ function RouteSync() {
 }
 
 export function PageLoader() {
+  useUiLanguage();
   return (
-    <div className="p-8 flex flex-col gap-4 max-w-5xl" aria-busy="true" aria-label="Loading">
+    <div className="p-8 flex flex-col gap-4 max-w-5xl" aria-busy="true" aria-label={tr("Loading")}>
       <div className="skeleton h-8 w-64" />
       <div className="skeleton h-28 w-full" />
       <div className="skeleton h-28 w-full" />
@@ -74,6 +77,7 @@ export function PageLoader() {
 }
 
 export default function AppShell() {
+  useUiLanguage();
   const { pathname } = useLocation();
   const { setLiveOpen, localImportOpen, showModal, showBriefing, liveOpen } = useZenos();
 
@@ -101,7 +105,7 @@ export default function AppShell() {
   return (
     <div className="min-h-dvh bg-surface text-on-surface">
       <RouteSync />
-      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] bg-primary text-on-primary px-3 py-2 rounded-lg">Skip to content</a>
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] bg-primary text-on-primary px-3 py-2 rounded-lg">{tr("Skip to content")}</a>
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
       <Header sidebarCollapsed={collapsed} />
 
@@ -127,22 +131,22 @@ export default function AppShell() {
 
       {/* Mobile: bottom tabs + floating Dante button */}
       {!isDante && (
-        <NavLink to="/dante" aria-label="Ask Dante" className="md:hidden fixed right-4 bottom-[76px] z-40 rounded-full shadow-lg">
+        <NavLink to="/dante" aria-label={tr("Ask Dante")} className="md:hidden fixed right-4 bottom-[76px] z-40 rounded-full shadow-lg">
           <DanteOrb size={52} />
         </NavLink>
       )}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.05)] flex items-center justify-around overflow-x-auto z-40 pb-[env(safe-area-inset-bottom)]" aria-label="Main">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.05)] flex items-center justify-around overflow-x-auto z-40 pb-[env(safe-area-inset-bottom)]" aria-label={tr("Main")}>
         {MOBILE_TABS.map(t => (
           <NavLink
             key={t.to}
             to={t.to}
             end={t.to === '/'}
-            className={({ isActive }) => `flex flex-col items-center gap-0.5 flex-1 min-w-[46px] py-1 transition-colors ${isActive ? 'text-primary' : 'text-on-surface-variant'}`}
+            className={({ isActive }) => `flex flex-col items-center gap-0.5 flex-1 min-w-[64px] px-1 py-1 transition-colors ${isActive ? 'text-primary' : 'text-on-surface-variant'}`}
           >
             {({ isActive }) => (
               <>
                 <span className={`material-symbols-outlined text-[22px] px-3 py-0.5 rounded-full ${isActive ? 'bg-primary/10' : ''}`} style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}>{t.icon}</span>
-                <span className="text-[11px] font-medium">{t.label}</span>
+                <span className="text-[11px] font-medium whitespace-nowrap">{t.label}</span>
               </>
             )}
           </NavLink>

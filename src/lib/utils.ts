@@ -1,12 +1,13 @@
+import {uiLocale,tr} from '../i18n';
 export function fmtDate(s: string) {
   if (!s) return '';
-  return new Date(s + 'T00:00').toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+  return new Date(s + 'T00:00').toLocaleDateString(uiLocale(), { month: 'short', day: 'numeric' });
 }
 
 export function fmtDateTime(s: string) {
   if (!s) return '';
   const d = new Date(s);
-  return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString(uiLocale(), { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' });
 }
 
 /** YYYY-MM-DD in the user's local timezone (toISOString() would give the UTC date). */
@@ -86,10 +87,10 @@ export function addDaysStr(n: number, from: Date = new Date()) {
 /** "Today", "Tomorrow", "Yesterday" or "Mon, 28 Oct". */
 export function relDay(date: string) {
   if (!date) return '';
-  if (date === today()) return 'Today';
-  if (date === addDaysStr(1)) return 'Tomorrow';
-  if (date === addDaysStr(-1)) return 'Yesterday';
-  return new Date(date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  if (date === today()) return tr('Today');
+  if (date === addDaysStr(1)) return tr('Tomorrow');
+  if (date === addDaysStr(-1)) return tr('Yesterday');
+  return new Date(date + 'T00:00').toLocaleDateString(uiLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 export function fmtDuration(totalSecs: number) {

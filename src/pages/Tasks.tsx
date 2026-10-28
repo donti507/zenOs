@@ -1,3 +1,4 @@
+import {tr,useUiLanguage,quantity} from '../i18n';
 import ExamPlanner from '../components/ExamPlanner';
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -9,6 +10,7 @@ import { PageHeader, Icon, CategoryChip, Segmented, EmptyState, btn, card } from
 type Show = 'open' | 'done' | 'all';
 
 export default function Tasks() {
+  useUiLanguage();
   const { state, updateState, toggleTaskDone, setShowModal, setEditTaskId } = useZenos();
   const reduce = useReducedMotion();
   const [show, setShow] = useState<Show>('open');
@@ -43,16 +45,16 @@ export default function Tasks() {
   return (
     <div>
       <PageHeader
-        title={activeCat ? activeCat.label : 'All tasks'}
-        subtitle={`${total} ${show === 'done' ? 'completed' : show === 'open' ? 'open' : ''} task${total === 1 ? '' : 's'}`}
-        actions={<><ExamPlanner /><button className={btn.primary} onClick={() => setShowModal('addTask')}><Icon name="add" className="text-[18px]" />New task</button></>}
+        title={activeCat ? activeCat.label : tr("All tasks")}
+        subtitle={quantity(total,'task')}
+        actions={<><ExamPlanner /><button className={btn.primary} onClick={() => setShowModal('addTask')}><Icon name="add" className="text-[18px]" />{tr("New task")}</button></>}
       />
 
       <div className="flex flex-col md:flex-row md:items-center gap-3 mb-6">
-        <Segmented<Show> label="Show" value={show} onChange={setShow} options={[{ value: 'open', label: 'Open' }, { value: 'done', label: 'Completed' }, { value: 'all', label: 'All' }]} />
+        <Segmented<Show> label={tr("Show")} value={show} onChange={setShow} options={[{ value: 'open', label: tr("Open tasks") }, { value: 'done', label: tr("Completed") }, { value: 'all', label: tr("All") }]} />
         <div className="relative flex-1 max-w-sm">
           <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant" />
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search tasks" aria-label="Search tasks"
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder={tr("Search tasks")} aria-label={tr("Search tasks")}
             className="h-10 w-full pl-9 pr-3 rounded-lg bg-surface-container-lowest shadow-soft outline-none focus:ring-2 focus:ring-primary/20" />
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -62,23 +64,23 @@ export default function Tasks() {
               <span className={`w-2 h-2 rounded-full ${categoryTone(c).dot}`} />{c.label}
             </button>
           ))}
-          {state.filterCat && <button className="text-[12px] text-primary px-2 cursor-pointer" onClick={() => updateState({ filterCat: null })}>Clear</button>}
+          {state.filterCat && <button className="text-[12px] text-primary px-2 cursor-pointer" onClick={() => updateState({ filterCat: null })}>{tr("Clear")}</button>}
         </div>
       </div>
 
       {groups.length === 0 && (
         <div className={card}>
-          <EmptyState icon={show === 'done' ? 'history' : 'task_alt'} title={query ? 'No matching tasks' : show === 'done' ? 'Nothing completed yet' : 'No open tasks'}
-            text={query ? 'Try a different search.' : 'Add a task, or ask Dante to create some for you.'}
-            action={<button className={btn.primary} onClick={() => setShowModal('addTask')}>New task</button>} />
+          <EmptyState icon={show === 'done' ? 'history' : 'task_alt'} title={query ? tr("No matching tasks") : show === 'done' ? tr("Nothing completed yet") : tr("No open tasks")}
+            text={query ? tr("Try a different search.") : tr("Add a task, or ask Dante to create some for you.")}
+            action={<button className={btn.primary} onClick={() => setShowModal('addTask')}>{tr("New task")}</button>} />
         </div>
       )}
 
       <div className="flex flex-col gap-6">
         {groups.map(g => (
-          <section key={g.key} aria-label={g.label}>
+          <section key={g.key} aria-label={tr(g.label)}>
             <h2 className={`flex items-center gap-2 text-[13px] font-semibold mb-2 ${g.key === 'overdue' ? 'text-error' : 'text-on-surface-variant'}`}>
-              {g.label}<span className="text-[11px] px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant">{g.items.length}</span>
+              {tr(g.label)}<span className="text-[11px] px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant">{g.items.length}</span>
             </h2>
             <div className={`${card} divide-y divide-outline-variant overflow-hidden`}>
               <AnimatePresence initial={false}>
@@ -88,7 +90,7 @@ export default function Tasks() {
                   return (
                     <motion.div key={String(t.id)} layout={!reduce} exit={reduce ? undefined : { opacity: 0, height: 0 }}
                       className="group flex items-center gap-3 px-4 py-3 hover:bg-surface-container-low/60 transition-colors">
-                      <button onClick={() => toggleTaskDone(t.id)} aria-label={done ? `Reopen “${t.title}”` : `Complete “${t.title}”`}
+                      <button onClick={() => toggleTaskDone(t.id)} aria-label={done ? tr("Reopen “{{0}}”",t.title) : tr("Complete “{{0}}”",t.title)}
                         className={`w-5 h-5 shrink-0 rounded-full border-2 flex items-center justify-center cursor-pointer transition-colors ${done ? 'bg-success border-success text-white' : 'border-outline hover:border-primary text-transparent hover:text-primary'}`}>
                         <Icon name="check" className="text-[14px]" />
                       </button>
@@ -97,7 +99,7 @@ export default function Tasks() {
                         {t.note && <div className="text-[12px] text-on-surface-variant truncate">{t.note}</div>}
                       </button>
                       <div className="hidden sm:flex items-center gap-2 shrink-0">
-                        {t.status === 'inprogress' && <span className="text-[11px] text-primary font-medium">In progress</span>}
+                        {t.status === 'inprogress' && <span className="text-[11px] text-primary font-medium">{tr("In progress")}</span>}
                         <CategoryChip cat={cat} />
                         {t.date && <span className={`text-[12px] w-24 text-right ${!done && t.date < todayStr ? 'text-error font-medium' : 'text-on-surface-variant'}`}>{relDay(t.date)}</span>}
                       </div>

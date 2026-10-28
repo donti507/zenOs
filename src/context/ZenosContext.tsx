@@ -1,3 +1,4 @@
+import {useUiLanguage,setUiLanguage,type UiLanguage} from '../i18n';
 import {useSharedWorkspaces} from '../hooks/useSharedWorkspaces';
 import {useWeeklyRecaps} from '../hooks/useWeeklyRecaps';
 import {useFocusRooms} from '../hooks/useFocusRooms';
@@ -103,6 +104,8 @@ const compact = (o: Record<string, any>) => Object.fromEntries(Object.entries(o)
 export type NewMeeting = Omit<Meeting, 'id' | 'createdAt'>;
 
 interface ZenosContextType extends ReturnType<typeof useSharedWorkspaces>, ReturnType<typeof useGallery>, ReturnType<typeof useChallenges>, ReturnType<typeof useFocusRooms>, ReturnType<typeof useWeeklyRecaps> {
+  uiLanguage:UiLanguage;
+  setUiLanguage:(language:UiLanguage)=>void;
   activeWorkspaceId: string | null;
   switchWorkspace: (id:string|null)=>void;
   focusSession: FocusSession | null;
@@ -217,6 +220,7 @@ interface ZenosContextType extends ReturnType<typeof useSharedWorkspaces>, Retur
 const ZenosContext = createContext<ZenosContextType | null>(null);
 
 export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
+  const uiLanguage=useUiLanguage();
   const [state, setState] = useState<ZenosState>(() => ({
     ...DEFAULT_STATE,
     theme: readLS<'dark' | 'light'>(LS.theme, 'light'),
@@ -1129,7 +1133,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     <ZenosContext.Provider
       value={{
         state,
-        ...shared,activeWorkspaceId,switchWorkspace,
+        ...shared,activeWorkspaceId,switchWorkspace,uiLanguage,setUiLanguage,
         ...lectures,
         ...semanticSearch,
         ...spaces,

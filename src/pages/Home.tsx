@@ -1,3 +1,4 @@
+import {tr,useUiLanguage,uiLocale,quantity} from '../i18n';
 import WeeklyRecap from '../components/WeeklyRecap';
 import {btn} from '../components/ui/kit';
 import SpaceWidgets from '../components/SpaceWidgets';
@@ -20,10 +21,10 @@ const addDays = (n: number) => {
 };
 const relDay = (date: string) => {
   if (!date) return '';
-  if (date === today()) return 'Today';
-  if (date === addDays(1)) return 'Tomorrow';
-  if (date === addDays(-1)) return 'Yesterday';
-  return new Date(date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  if (date === today()) return tr('Today');
+  if (date === addDays(1)) return tr('Tomorrow');
+  if (date === addDays(-1)) return tr('Yesterday');
+  return new Date(date + 'T00:00').toLocaleDateString(uiLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
 };
 const greeting = () => {
   const h = new Date().getHours();
@@ -37,6 +38,7 @@ type ScheduleItem = { key: string; date: string; time: string; title: string; su
 const rank = (t: Task, todayStr: string) => (!t.date ? 3 : t.date < todayStr ? 0 : t.date === todayStr ? 1 : 2);
 
 export default function Home() {
+  const uiLanguage=useUiLanguage();
   const { state, user, googleEvents, toggleTaskDone, setShowModal, setEditTaskId, setLiveOpen } = useZenos();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
@@ -71,7 +73,7 @@ export default function Home() {
   const schedule: ScheduleItem[] = useMemo(() => {
     const local: ScheduleItem[] = (state.meetings || [])
       .filter(m => m.status !== 'completed' && m.date >= todayStr)
-      .map(m => ({ key: `m-${m.id}`, date: m.date, time: m.time, title: m.subject, subtitle: `With ${m.personName}`, link: findMeetLink(m.notes), source: 'meeting' }));
+      .map(m => ({ key: `m-${m.id}`, date: m.date, time: m.time, title: m.subject, subtitle: tr('With {{0}}',m.personName), link: findMeetLink(m.notes), source: 'meeting' }));
     const gcal: ScheduleItem[] = googleEvents
       .map((e: any) => {
         const start: string = e.start?.dateTime || e.start?.date || '';
@@ -92,30 +94,30 @@ export default function Home() {
     return [...local, ...gcal.filter(g => !seen.has(`${g.date}${g.time}${g.title}`))]
       .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`))
       .slice(0, 4);
-  }, [state.meetings, googleEvents, todayStr]);
+  }, [state.meetings, googleEvents, todayStr,uiLanguage]);
   const meetingsToday = schedule.filter(s => s.date === todayStr).length;
 
   // Dante's proactive suggestion, based on what actually needs attention
   const brief = overdue.length
     ? {
-        text: <>You have <span className="font-medium text-primary">{overdue.length} overdue task{overdue.length > 1 ? 's' : ''}</span>. Want Dante to suggest new dates?</>,
+        text: <>{tr("You have ")}<span className="font-medium text-primary">{tr('Overdue tasks: {{0}}',overdue.length)}</span>{tr(". Want Dante to suggest new dates?")}</>,
         action: 'Reschedule',
-        prompt: 'Look at my overdue tasks and suggest realistic new due dates this week. Ask me before changing anything.',
+        prompt: tr("Look at my overdue tasks and suggest realistic new due dates this week. Ask me before changing anything."),
       }
     : schedule[0] && schedule[0].date === todayStr
       ? {
-          text: <>Next up: <span className="font-medium text-primary">{schedule[0].title}</span> at {schedule[0].time}. Get a quick prep list?</>,
+          text: <>{tr("Next up: ")}<span className="font-medium text-primary">{schedule[0].title}</span>{tr(" at ")}{schedule[0].time}{tr(". Get a quick prep list?")}</>,
           action: 'Prepare me',
-          prompt: `Help me prepare for "${schedule[0].title}" at ${schedule[0].time} today. Give me a short prep checklist based on my tasks.`,
+          prompt: tr("Help me prepare for \"{{0}}\" at {{1}} today. Give me a short prep checklist based on my tasks.",schedule[0].title,schedule[0].time),
         }
       : open.length
-        ? { text: <>{open.length} open tasks and a clear calendar. Let Dante plan your day.</>, action: 'Plan my day', prompt: 'Plan my day: pick the 3 most important tasks and suggest an order.' }
-        : { text: <>No open tasks. Tell Dante what you're working on and it will set things up.</>, action: 'Get started', prompt: 'Help me set up my tasks for this week. Ask me what I am working on.' };
+        ? { text: <>{open.length}{tr(" open tasks and a clear calendar. Let Dante plan your day.")}</>, action: 'Plan my day', prompt: tr("Plan my day: pick the 3 most important tasks and suggest an order.") }
+        : { text: <>{tr("No open tasks. Tell Dante what you're working on and it will set things up.")}</>, action: 'Get started', prompt: tr("Help me set up my tasks for this week. Ask me what I am working on.") };
 
   const suggestions = [
-    'What should I focus on today?',
-    overdue[0] ? `Help me finish “${overdue[0].title}”` : 'What is due this week?',
-    'Summarize my week',
+    tr("What should I focus on today?"),
+    overdue[0] ? tr("Help me finish “{{0}}”",overdue[0].title) : tr("What is due this week?"),
+    tr("Summarize my week"),
   ];
 
   const onCheck = (t: Task) => {
@@ -140,25 +142,23 @@ export default function Home() {
         <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
           <div className="flex flex-col gap-2 max-w-3xl">
             <span className="text-[12px] text-on-surface-variant font-medium">
-              {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+              {new Date().toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long' })}
             </span>
             <h1 className="text-[26px] leading-[34px] md:text-[32px] md:leading-10 font-semibold tracking-tight text-on-surface">
-              {greeting()}{firstName ? `, ${firstName}` : ''}.
+              {tr(greeting())}{firstName ? `, ${firstName}` : ''}.
             </h1>
-            <p className="text-on-surface-variant">
-              You have <strong className="text-on-surface font-medium">{dueToday.length} task{dueToday.length === 1 ? '' : 's'} due today</strong>
-              {overdue.length > 0 && <>, <strong className="text-error font-medium">{overdue.length} overdue</strong></>}
-              {' '}and <strong className="text-on-surface font-medium">{meetingsToday} meeting{meetingsToday === 1 ? '' : 's'}</strong> scheduled.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2"><SnapSyllabus /><button className={btn.secondary} onClick={()=>navigate('/focus-rooms')}>Focus with others</button></div>
+            <p className="text-on-surface-variant">{tr("You have ")}<strong className="text-on-surface font-medium">{quantity(dueToday.length,'task')}{tr(" due today")}</strong>
+              {overdue.length > 0 && <>, <strong className="text-error font-medium">{overdue.length}{tr(" overdue")}</strong></>}
+              {' '}{tr("and ")}<strong className="text-on-surface font-medium">{quantity(meetingsToday,'meeting')}</strong>{tr(" scheduled. ")}</p>
+            <div className="mt-2 flex flex-wrap gap-2"><SnapSyllabus /><button className={btn.secondary} onClick={()=>navigate('/focus-rooms')}>{tr("Focus with others")}</button></div>
             <div className="pt-1 flex flex-wrap items-center gap-3 text-[12px] text-on-surface-variant">
               <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-lg">
                 <span className="material-symbols-outlined text-[16px] text-warning">local_fire_department</span>
-                <span><strong className="text-on-surface font-semibold">{streak}-day</strong> completion streak</span>
+                <span>{tr('Completion streak')}: <strong className="text-on-surface font-semibold">{quantity(streak,'day')}</strong></span>
               </div>
               <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-lg">
                 <span className="material-symbols-outlined text-[16px] text-tertiary">task_alt</span>
-                <span><strong className="text-on-surface font-semibold">{week.total}</strong> tasks done this week</span>
+                <span><strong className="text-on-surface font-semibold">{week.total}</strong>{tr(" tasks done this week")}</span>
               </div>
             </div>
           </div>
@@ -171,13 +171,13 @@ export default function Home() {
               >
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[16px] text-primary">auto_awesome</span>
-                  <span className="text-[12px] font-semibold text-on-surface">Dante suggests</span>
+                  <span className="text-[12px] font-semibold text-on-surface">{tr("Dante suggests")}</span>
                 </div>
                 <p className="text-on-surface leading-snug">{brief.text}</p>
                 <div className="pt-1 flex items-center justify-end gap-2">
-                  <button className="px-2.5 py-1 text-on-surface-variant hover:text-on-surface text-[12px] cursor-pointer" type="button" onClick={() => setBriefDismissed(true)}>Dismiss</button>
+                  <button className="px-2.5 py-1 text-on-surface-variant hover:text-on-surface text-[12px] cursor-pointer" type="button" onClick={() => setBriefDismissed(true)}>{tr("Dismiss")}</button>
                   <button className="px-3 py-1 rounded-lg bg-primary text-on-primary text-[12px] font-semibold hover:opacity-90 transition shadow-sm cursor-pointer active:scale-[0.97]" type="button" onClick={() => ask(brief.prompt)}>
-                    {brief.action}
+                    {tr(brief.action)}
                   </button>
                 </div>
               </motion.div>
@@ -199,13 +199,13 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <span className="text-[16px] font-semibold tracking-tight text-on-surface">Dante</span>
                 <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${status && !status.ready ? 'bg-error-container text-error' : 'bg-surface-container-high text-primary'}`}>
-                  {status ? (status.ready ? 'Ready' : 'Not configured') : 'Connecting…'}
+                  {status ? (status.ready ? tr("Ready") : tr("Not configured")) : tr("Connecting…")}
                 </span>
               </div>
               <p className="text-[12px] text-on-surface-variant max-w-sm">
                 {status && !status.ready
                   ? status.problem
-                  : 'Knows your tasks, meetings and calendar. Ask in text or by voice, and it can make changes for you.'}
+                  : tr("Knows your tasks, meetings and calendar. Ask in text or by voice, and it can make changes for you.")}
               </p>
             </div>
           </div>
@@ -216,16 +216,16 @@ export default function Home() {
               { icon: 'graphic_eq', tone: 'text-tertiary', title: 'Go Live', sub: 'Talk hands-free', voice: true },
             ].map(a => (
               <button
-                key={a.title}
+                key={tr(a.title)}
                 type="button"
-                onClick={() => (a.voice ? setLiveOpen(true) : ask(a.q!))}
+                onClick={() => (a.voice ? setLiveOpen(true) : ask(tr(a.q!)))}
                 className="group flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all text-left cursor-pointer active:scale-[0.98]"
               >
                 <div className="flex items-center gap-2.5">
                   <span className={`material-symbols-outlined text-[18px] ${a.tone}`}>{a.icon}</span>
                   <div>
-                    <div className="font-medium text-on-surface leading-none">{a.title}</div>
-                    <div className="text-[11px] text-on-surface-variant mt-1">{a.sub}</div>
+                    <div className="font-medium text-on-surface leading-none">{tr(a.title)}</div>
+                    <div className="text-[11px] text-on-surface-variant mt-1">{tr(a.sub)}</div>
                   </div>
                 </div>
                 <span className="material-symbols-outlined text-[16px] text-outline group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
@@ -247,15 +247,14 @@ export default function Home() {
               value={prompt}
               onChange={e => setPrompt(e.target.value)}
               className="w-full h-11 pl-11 pr-24 bg-surface-container-lowest rounded-xl text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-sm transition-all"
-              placeholder="Ask Dante about your tasks, meetings or calendar…"
-              aria-label="Ask Dante"
+              placeholder={tr("Ask Dante about your tasks, meetings or calendar…")}
+              aria-label={tr("Ask Dante")}
             />
-            <button type="submit" disabled={!prompt.trim()} className="absolute right-2 h-8 px-3 rounded-lg bg-primary-container text-on-primary-container text-[12px] font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50">
-              Send<span className="material-symbols-outlined text-[14px]">arrow_upward</span>
+            <button type="submit" disabled={!prompt.trim()} className="absolute right-2 h-8 px-3 rounded-lg bg-primary-container text-on-primary-container text-[12px] font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50">{tr("Send")}<span className="material-symbols-outlined text-[14px]">arrow_upward</span>
             </button>
           </form>
           <div className="flex flex-wrap items-center gap-2 mt-2 text-[12px]">
-            <span className="text-on-surface-variant font-medium">Try:</span>
+            <span className="text-on-surface-variant font-medium">{tr("Try:")}</span>
             {suggestions.map(s => (
               <button key={s} type="button" onClick={() => ask(s)} className="px-2.5 py-1 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors cursor-pointer">
                 {s}
@@ -271,15 +270,13 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[20px] text-primary">task_alt</span>
-              <h2 className="text-[16px] font-semibold text-on-surface">Priority tasks</h2>
+              <h2 className="text-[16px] font-semibold text-on-surface">{tr("Priority tasks")}</h2>
             </div>
             <div className="flex items-center gap-2">
-              <button className="text-[12px] text-on-surface-variant hover:text-on-surface transition-colors px-2 py-1 rounded-md bg-surface-container-low cursor-pointer" type="button" onClick={() => navigate('/tasks')}>
-                View all ({open.length})
+              <button className="text-[12px] text-on-surface-variant hover:text-on-surface transition-colors px-2 py-1 rounded-md bg-surface-container-low cursor-pointer" type="button" onClick={() => navigate('/tasks')}>{tr("View all (")}{open.length})
               </button>
               <button className="text-[12px] font-semibold text-primary hover:opacity-80 transition flex items-center gap-1 cursor-pointer" type="button" onClick={() => setShowModal('addTask')}>
-                <span className="material-symbols-outlined text-[16px]">add_circle</span> Add task
-              </button>
+                <span className="material-symbols-outlined text-[16px]">add_circle</span>{tr(" Add task")}</button>
             </div>
           </div>
 
@@ -287,8 +284,8 @@ export default function Home() {
             {priority.length === 0 && (
               <div className={`${card} p-8 text-center flex flex-col items-center gap-2`}>
                 <span className="material-symbols-outlined text-[32px] text-success">celebration</span>
-                <div className="font-medium text-on-surface">You're all caught up</div>
-                <p className="text-[12px] text-on-surface-variant">Add a task, or ask Dante to plan the rest of your week.</p>
+                <div className="font-medium text-on-surface">{tr("You're all caught up")}</div>
+                <p className="text-[12px] text-on-surface-variant">{tr("Add a task, or ask Dante to plan the rest of your week.")}</p>
               </div>
             )}
             <AnimatePresence initial={false}>
@@ -310,7 +307,7 @@ export default function Home() {
                       style={checked && !reduce ? { animation: 'check-pop .35s ease-out' } : undefined}
                       onClick={() => onCheck(t)}
                       type="button"
-                      aria-label={`Mark “${t.title}” as done`}
+                      aria-label={tr("Mark “{{0}}” as done",t.title)}
                     >
                       <span className="material-symbols-outlined text-[16px]">check</span>
                     </button>
@@ -326,10 +323,10 @@ export default function Home() {
                         <div className="flex items-center gap-1.5">
                           {isOverdue ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-error-container text-error text-[11px] font-semibold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-error" /> Overdue · {relDay(t.date)}
+                              <span className="w-1.5 h-1.5 rounded-full bg-error" />{tr(" Overdue · ")}{relDay(t.date)}
                             </span>
                           ) : t.date === todayStr ? (
-                            <span className="px-2 py-0.5 rounded-full bg-warning-container text-warning text-[11px] font-semibold">Due today</span>
+                            <span className="px-2 py-0.5 rounded-full bg-warning-container text-warning text-[11px] font-semibold">{tr("Due today")}</span>
                           ) : t.date ? (
                             <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-medium">{relDay(t.date)}</span>
                           ) : null}
@@ -339,8 +336,8 @@ export default function Home() {
                       {t.note && <p className="text-[12px] text-on-surface-variant line-clamp-2">{t.note}</p>}
                       {(t.progress > 0 || steps.length > 0 || t.status === 'inprogress') && (
                         <div className="flex items-center gap-4 pt-1 text-[12px] text-on-surface-variant">
-                          {t.status === 'inprogress' && <span className="flex items-center gap-1 text-primary font-medium"><span className="material-symbols-outlined text-[14px]">pending</span> In progress</span>}
-                          {steps.length > 0 && <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">checklist</span> {steps.filter(s => s.done).length}/{steps.length} steps</span>}
+                          {t.status === 'inprogress' && <span className="flex items-center gap-1 text-primary font-medium"><span className="material-symbols-outlined text-[14px]">pending</span>{tr(" In progress")}</span>}
+                          {steps.length > 0 && <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">checklist</span> {steps.filter(s => s.done).length}/{steps.length}{tr(" steps")}</span>}
                           {t.progress > 0 && (
                             <span className="flex items-center gap-2 flex-1 max-w-[160px]">
                               <span className="h-1.5 flex-1 rounded-full bg-surface-container-high overflow-hidden"><span className="block h-full rounded-full bg-primary" style={{ width: `${t.progress}%` }} /></span>
@@ -352,10 +349,10 @@ export default function Home() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => ask(`Help me get “${t.title}” done. Break it into small next steps.`)}
+                      onClick={() => ask(tr("Help me get “{{0}}” done. Break it into small next steps.",t.title))}
                       className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-on-surface-variant hover:text-primary cursor-pointer"
-                      aria-label={`Ask Dante about “${t.title}”`}
-                      title="Ask Dante"
+                      aria-label={tr("Ask Dante about “{{0}}”",t.title)}
+                      title={tr("Ask Dante")}
                     >
                       <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
                     </button>
@@ -368,13 +365,13 @@ export default function Home() {
           {/* Weekly throughput */}
           <div className={`p-4 ${card} flex items-center justify-between gap-4`}>
             <div>
-              <span className="text-[12px] font-semibold text-on-surface">This week</span>
-              <div className="text-[24px] leading-8 font-semibold tracking-tight text-on-surface">{week.total} done</div>
+              <span className="text-[12px] font-semibold text-on-surface">{tr("This week")}</span>
+              <div className="text-[24px] leading-8 font-semibold tracking-tight text-on-surface">{week.total}{tr(" done")}</div>
               <span className="text-[11px] text-on-surface-variant">
-                {week.change === null ? `${open.length} still open` : `${week.change >= 0 ? '+' : ''}${week.change}% vs last week · ${open.length} still open`}
+                {week.change === null ? tr("{{0}} still open",open.length) : tr("{{0}}{{1}}% vs last week · {{2}} still open",week.change >= 0 ? '+' : '',week.change,open.length)}
               </span>
             </div>
-            <svg className="w-36 h-12 text-primary shrink-0" fill="none" viewBox="0 0 144 48" role="img" aria-label={`Tasks completed per day: ${week.counts.join(', ')}`}>
+            <svg className="w-36 h-12 text-primary shrink-0" fill="none" viewBox="0 0 144 48" role="img" aria-label={tr("Tasks completed per day: {{0}}",week.counts.join(', '))}>
               <path d={`${line} V48 H0 Z`} fill="currentColor" fillOpacity="0.08" />
               <path d={line} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
             </svg>
@@ -388,15 +385,15 @@ export default function Home() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[20px] text-tertiary">videocam</span>
-                <h2 className="text-[16px] font-semibold text-on-surface">Up next</h2>
+                <h2 className="text-[16px] font-semibold text-on-surface">{tr("Up next")}</h2>
               </div>
-              <button className="text-[12px] text-primary hover:underline cursor-pointer" type="button" onClick={() => navigate('/meetings')}>All meetings</button>
+              <button className="text-[12px] text-primary hover:underline cursor-pointer" type="button" onClick={() => navigate('/meetings')}>{tr("All meetings")}</button>
             </div>
 
             {schedule.length === 0 ? (
               <div className="p-4 rounded-xl bg-surface-container-low text-center flex flex-col items-center gap-2">
-                <span className="text-on-surface-variant text-[12px]">Nothing scheduled. Enjoy the focus time.</span>
-                <button className="text-[12px] font-semibold text-primary cursor-pointer" onClick={() => navigate('/meetings')}>Schedule a meeting</button>
+                <span className="text-on-surface-variant text-[12px]">{tr("Nothing scheduled. Enjoy the focus time.")}</span>
+                <button className="text-[12px] font-semibold text-primary cursor-pointer" onClick={() => navigate('/meetings')}>{tr("Schedule a meeting")}</button>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
@@ -408,7 +405,7 @@ export default function Home() {
                           {s.date === todayStr && <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
                           {relDay(s.date)} · {s.time}
                         </span>
-                        <span className="text-[11px] text-on-surface-variant font-medium">{s.source === 'google' ? 'Google Calendar' : 'Meeting'}</span>
+                        <span className="text-[11px] text-on-surface-variant font-medium">{s.source === 'google' ? 'Google Calendar' : tr("Meeting")}</span>
                       </div>
                       <div>
                         <div className="text-[15px] font-semibold text-on-surface">{s.title}</div>
@@ -417,23 +414,21 @@ export default function Home() {
                       <div className="flex items-center gap-2 pt-1">
                         {s.link && (
                           <a href={s.link} target="_blank" rel="noopener noreferrer" className="flex-1 py-1.5 px-3 rounded-lg bg-primary text-on-primary text-[12px] font-semibold hover:opacity-90 transition shadow-sm flex items-center justify-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px]">call</span>Join call
-                          </a>
+                            <span className="material-symbols-outlined text-[16px]">call</span>{tr("Join call")}</a>
                         )}
                         <button
                           type="button"
-                          onClick={() => ask(`Help me prepare for "${s.title}" (${relDay(s.date)} at ${s.time}). Give me a short prep checklist.`)}
+                          onClick={() => ask(tr("Help me prepare for \"{{0}}\" ({{1}} at {{2}}). Give me a short prep checklist.",s.title,relDay(s.date),s.time))}
                           className="flex-1 py-1.5 px-3 rounded-lg bg-surface-container-lowest text-on-surface text-[12px] hover:bg-surface-container transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                         >
-                          <span className="material-symbols-outlined text-[16px] text-primary">auto_awesome</span>Prep with Dante
-                        </button>
+                          <span className="material-symbols-outlined text-[16px] text-primary">auto_awesome</span>{tr("Prep with Dante")}</button>
                       </div>
                     </div>
                   ) : (
                     <div key={s.key} className="p-4 rounded-xl bg-surface-container-low/50 hover:bg-surface-container-low transition-colors flex flex-col gap-1">
                       <div className="flex items-center justify-between">
                         <span className="text-[12px] text-on-surface-variant font-medium">{relDay(s.date)} · {s.time}</span>
-                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant">{s.source === 'google' ? 'Google' : 'Meeting'}</span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant">{s.source === 'google' ? 'Google' : tr("Meeting")}</span>
                       </div>
                       <div className="font-medium text-on-surface">{s.title}</div>
                       <div className="text-[12px] text-on-surface-variant">{s.subtitle}</div>
@@ -449,12 +444,12 @@ export default function Home() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[20px] text-primary">folder_special</span>
-                <h2 className="text-[16px] font-semibold text-on-surface">Vault</h2>
+                <h2 className="text-[16px] font-semibold text-on-surface">{tr("Vault")}</h2>
               </div>
-              <button className="text-[12px] text-primary hover:underline cursor-pointer" type="button" onClick={() => navigate('/vault')}>Open vault</button>
+              <button className="text-[12px] text-primary hover:underline cursor-pointer" type="button" onClick={() => navigate('/vault')}>{tr("Open vault")}</button>
             </div>
             {state.vault.length === 0 ? (
-              <p className="text-[12px] text-on-surface-variant">Save links and files here so Dante can point you to them.</p>
+              <p className="text-[12px] text-on-surface-variant">{tr("Save links and files here so Dante can point you to them.")}</p>
             ) : (
               <div className="flex flex-col gap-1">
                 {state.vault.slice(0, 4).map(v => {
@@ -466,7 +461,7 @@ export default function Home() {
                         <span className="material-symbols-outlined text-[18px] text-primary">{icon}</span>
                         <div className="min-w-0">
                           <span className="text-on-surface truncate font-medium group-hover:text-primary transition-colors block">{v.name}</span>
-                          <span className="text-[11px] text-on-surface-variant truncate block">{v.detail || (v.url ? hostOf(v.url) : 'File')}</span>
+                          <span className="text-[11px] text-on-surface-variant truncate block">{v.detail || (v.url ? hostOf(v.url) : tr("File"))}</span>
                         </div>
                       </div>
                       {v.url && <span className="material-symbols-outlined text-[18px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">open_in_new</span>}

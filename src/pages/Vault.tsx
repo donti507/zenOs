@@ -1,3 +1,4 @@
+import {tr,useUiLanguage,uiLocale} from '../i18n';
 import { useMemo, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +10,7 @@ const TINTS = ['bg-blue-500', 'bg-purple-500', 'bg-orange-500', 'bg-emerald-500'
 const tintFor = (s: string) => TINTS[[...s].reduce((n, c) => n + c.charCodeAt(0), 0) % TINTS.length];
 
 export default function Vault() {
+  useUiLanguage();
   const { state, addVaultItem, deleteVaultItem } = useZenos();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
@@ -42,16 +44,16 @@ export default function Vault() {
   return (
     <div>
       <PageHeader
-        title="Vault"
-        subtitle={`${state.vault.length} saved link${state.vault.length === 1 ? '' : 's'}. Dante can see these and point you to them.`}
+        title={tr("Vault")}
+        subtitle={tr("{{0}} saved link{{1}}. Dante can see these and point you to them.",state.vault.length,state.vault.length === 1 ? '' : 's')}
         actions={
           <>
             <div className="relative">
               <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant" />
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search vault" aria-label="Search vault"
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder={tr("Search vault")} aria-label={tr("Search vault")}
                 className="h-9 pl-9 pr-3 w-52 rounded-lg bg-surface-container-lowest shadow-soft outline-none focus:ring-2 focus:ring-primary/20" />
             </div>
-            <button className={btn.primary} onClick={() => setOpen(true)}><Icon name="add_link" className="text-[18px]" />Add link</button>
+            <button className={btn.primary} onClick={() => setOpen(true)}><Icon name="add_link" className="text-[18px]" />{tr("Add link")}</button>
           </>
         }
       />
@@ -60,9 +62,9 @@ export default function Vault() {
         <div className={card}>
           <EmptyState
             icon={query ? 'search_off' : 'folder_special'}
-            title={query ? 'Nothing matches' : 'Your vault is empty'}
-            text={query ? 'Try another search.' : 'Save papers, docs, portals and references so they are one click away.'}
-            action={!query && <button className={btn.primary} onClick={() => setOpen(true)}>Add your first link</button>}
+            title={query ? tr("Nothing matches") : tr("Your vault is empty")}
+            text={query ? tr("Try another search.") : tr("Save papers, docs, portals and references so they are one click away.")}
+            action={!query && <button className={btn.primary} onClick={() => setOpen(true)}>{tr("Add your first link")}</button>}
           />
         </div>
       ) : (
@@ -90,24 +92,24 @@ export default function Vault() {
                       ) : (
                         <div className="font-semibold text-on-surface line-clamp-2">{v.name}</div>
                       )}
-                      <div className="text-[12px] text-on-surface-variant truncate">{host || 'File'}</div>
+                      <div className="text-[12px] text-on-surface-variant truncate">{host || tr("File")}</div>
                     </div>
                   </div>
                   {v.detail && <p className="text-[13px] text-on-surface-variant line-clamp-2">{v.detail}</p>}
                   <div className="flex items-center gap-1 mt-auto pt-1">
-                    <span className="text-[11px] text-on-surface-variant mr-auto">{v.addedAt ? `Added ${new Date(v.addedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
+                    <span className="text-[11px] text-on-surface-variant mr-auto">{v.addedAt ? tr("Added {{0}}",new Date(v.addedAt).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short' })) : ''}</span>
                     {v.url && (
                       <>
-                        <button className={btn.icon} onClick={() => copy(v.id, v.url!)} aria-label={`Copy link to ${v.name}`} title="Copy link">
+                        <button className={btn.icon} onClick={() => copy(v.id, v.url!)} aria-label={tr("Copy link to {{0}}",v.name)} title={tr("Copy link")}>
                           <Icon name={copied === v.id ? 'check' : 'content_copy'} className="text-[18px]" />
                         </button>
-                        <button className={btn.icon} title="Ask Dante" aria-label={`Ask Dante about ${v.name}`}
-                          onClick={() => navigate('/dante', { state: { prompt: `Which of my tasks is "${v.name}" (${v.url}) useful for, and what should I do with it next?` } })}>
+                        <button className={btn.icon} title={tr("Ask Dante")} aria-label={tr("Ask Dante about {{0}}",v.name)}
+                          onClick={() => navigate('/dante', { state: { prompt: tr("Which of my tasks is \"{{0}}\" ({{1}}) useful for, and what should I do with it next?",v.name,v.url) } })}>
                           <Icon name="auto_awesome" className="text-[18px] text-primary" />
                         </button>
                       </>
                     )}
-                    <button className={`${btn.icon} hover:text-error`} aria-label={`Delete ${v.name}`} title="Delete" onClick={() => confirm(`Delete “${v.name}”?`) && deleteVaultItem(v.id)}>
+                    <button className={`${btn.icon} hover:text-error`} aria-label={tr("Delete {{0}}",v.name)} title={tr("Delete")} onClick={() => confirm(tr("Delete “{{0}}”?",v.name)) && deleteVaultItem(v.id)}>
                       <Icon name="delete" className="text-[18px]" />
                     </button>
                   </div>
@@ -121,14 +123,14 @@ export default function Vault() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Add link"
+        title={tr("Add link")}
         width={460}
-        footer={<><button className={btn.ghost} onClick={() => setOpen(false)}>Cancel</button><button className={btn.solid} onClick={save} disabled={!form.url.trim()}>Save link</button></>}
+        footer={<><button className={btn.ghost} onClick={() => setOpen(false)}>{tr("Cancel")}</button><button className={btn.solid} onClick={save} disabled={!form.url.trim()}>{tr("Save link")}</button></>}
       >
-        <Field label="Link"><input className={input} value={form.url} placeholder="https://…" onChange={e => setForm({ ...form, url: e.target.value })} onKeyDown={e => e.key === 'Enter' && save()} /></Field>
-        <Field label="Name" hint="Leave empty to use the website name"><input className={input} value={form.name} placeholder="e.g. Neural Attention Maps" onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label="Note"><textarea className={textarea} value={form.detail} placeholder="Why is this useful?" onChange={e => setForm({ ...form, detail: e.target.value })} /></Field>
-        {error && <p className="text-[13px] text-error" role="alert">{error}</p>}
+        <Field label={tr("Link")}><input className={input} value={form.url} placeholder="https://…" onChange={e => setForm({ ...form, url: e.target.value })} onKeyDown={e => e.key === 'Enter' && save()} /></Field>
+        <Field label={tr("Name")} hint={tr("Leave empty to use the website name")}><input className={input} value={form.name} placeholder={tr("e.g. Neural Attention Maps")} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label={tr("Note")}><textarea className={textarea} value={form.detail} placeholder={tr("Why is this useful?")} onChange={e => setForm({ ...form, detail: e.target.value })} /></Field>
+        {error && <p className="text-[13px] text-error" role="alert">{tr(error)}</p>}
       </Modal>
     </div>
   );
