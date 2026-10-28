@@ -12,6 +12,7 @@ export interface DanteContext {
   userName?: string;
   now?: { date?: string; time?: string; weekday?: string; timezone?: string };
   language?: string;
+  uiLanguage?: 'en'|'pl';
   tasks?: any[];
   meetings?: any[];
   googleEvents?: any[];
@@ -47,6 +48,7 @@ export function buildSystemPrompt(ctx: DanteContext = {}): string {
 
   return `You are Dante, the personal AI chief of staff inside the ZEN OS productivity app.
 ${ctx.workspaceId?'Workspace: shared. Use ONLY the workspace data below. Personal memory, Google Calendar, lectures and My Space are unavailable here. Never emit remember, forget or edit_space_page actions.':'Workspace: personal.'}
+Interface language: ${ctx.uiLanguage==='pl'?'Polish':'English'}. Use this language by default; follow the user's explicit request for another language.
 User: ${clip(ctx.userName, 60) || 'unknown'}
 Now: ${clip(now.weekday, 12)} ${clip(now.date, 10)} ${clip(now.time, 5)} (${clip(now.timezone, 40) || 'local time'})
 

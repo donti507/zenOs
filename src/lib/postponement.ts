@@ -1,3 +1,4 @@
+import {tr} from '../i18n';
 import type { Task } from '../types';
 import { calendarDate } from './utils';
 
@@ -10,5 +11,5 @@ export function applyPostponement(previous: Task, updates: Partial<Task>): Task 
   return { ...previous, ...updates, postponedCount: Math.min(2147483647, postponedCount(previous) + (later ? 1 : 0)) };
 }
 export function breakdownPrompt(task: Task) {
-  return `Help me start this existing task: id ${JSON.stringify(String(task.id))}, title ${JSON.stringify(task.title)}. Create exactly 3 tiny, concrete subtasks as checklist steps, each small enough to start in about 5 minutes. Use add_task_steps on this task ID to append them; preserve existing steps, due date and other fields. Do not create separate tasks.`;
+  return tr("Help me start this existing task: id {{0}}, title {{1}}. Create exactly 3 tiny, concrete subtasks as checklist steps, each small enough to start in about 5 minutes. Use add_task_steps on this task ID to append them; preserve existing steps, due date and other fields. Do not create separate tasks.",JSON.stringify(String(task.id)),JSON.stringify(task.title));
 }

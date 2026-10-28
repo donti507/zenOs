@@ -1,3 +1,4 @@
+import {tr,useUiLanguage} from '../i18n';
 import { useMemo, useState, DragEvent } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useZenos } from '../context/ZenosContext';
@@ -6,12 +7,13 @@ import { relDay, today, categoryTone } from '../lib/utils';
 import { PageHeader, Icon, CategoryChip, btn, card } from '../components/ui/kit';
 
 const COLUMNS: { key: Task['status']; label: string; icon: string; tone: string }[] = [
-  { key: 'todo', label: 'To do', icon: 'radio_button_unchecked', tone: 'text-on-surface-variant' },
-  { key: 'inprogress', label: 'In progress', icon: 'pending', tone: 'text-primary' },
-  { key: 'done', label: 'Done', icon: 'check_circle', tone: 'text-success' },
+  { key: 'todo', get label(){return tr("To do");}, icon: 'radio_button_unchecked', tone: 'text-on-surface-variant' },
+  { key: 'inprogress', get label(){return tr("In progress");}, icon: 'pending', tone: 'text-primary' },
+  { key: 'done', get label(){return tr("Done");}, icon: 'check_circle', tone: 'text-success' },
 ];
 
 export default function Board() {
+  useUiLanguage();
   const { state, updateState, addTask, editTask, toggleTaskDone, setShowModal, setEditTaskId } = useZenos();
   const reduce = useReducedMotion();
   const [query, setQuery] = useState('');
@@ -61,26 +63,24 @@ export default function Board() {
   return (
     <div className="flex flex-col h-full">
       <PageHeader
-        title="Board"
-        subtitle="Drag cards between columns to update their status."
+        title={tr("Board")}
+        subtitle={tr("Drag cards between columns to update their status.")}
         actions={
           <>
             <div className="relative">
               <Icon name="search" className="absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant" />
-              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter tasks" aria-label="Filter tasks"
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder={tr("Filter tasks")} aria-label={tr("Filter tasks")}
                 className="h-9 pl-9 pr-3 w-48 rounded-lg bg-surface-container-lowest shadow-soft outline-none focus:ring-2 focus:ring-primary/20" />
             </div>
-            <button className={btn.primary} onClick={() => setShowModal('addTask')}><Icon name="add" className="text-[18px]" />New task</button>
+            <button className={btn.primary} onClick={() => setShowModal('addTask')}><Icon name="add" className="text-[18px]" />{tr("New task")}</button>
           </>
         }
       />
 
       {/* Category filter chips */}
-      <div className="flex flex-wrap items-center gap-2 mb-5" role="toolbar" aria-label="Filter by category">
+      <div className="flex flex-wrap items-center gap-2 mb-5" role="toolbar" aria-label={tr("Filter by category")}>
         <button onClick={() => updateState({ filterCat: null })}
-          className={`px-3 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors ${!state.filterCat ? 'bg-on-surface text-surface' : 'bg-surface-container-lowest shadow-soft text-on-surface-variant hover:text-on-surface'}`}>
-          All
-        </button>
+          className={`px-3 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors ${!state.filterCat ? 'bg-on-surface text-surface' : 'bg-surface-container-lowest shadow-soft text-on-surface-variant hover:text-on-surface'}`}>{tr("All")}</button>
         {state.categories.map(c => (
           <button key={c.id} onClick={() => updateState({ filterCat: state.filterCat === c.id ? null : c.id })} aria-pressed={state.filterCat === c.id}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium cursor-pointer transition-colors ${state.filterCat === c.id ? 'bg-on-surface text-surface' : 'bg-surface-container-lowest shadow-soft text-on-surface-variant hover:text-on-surface'}`}>
@@ -110,7 +110,7 @@ export default function Board() {
                   <h2 className="font-semibold text-on-surface">{col.label}</h2>
                   <span className="text-[12px] px-2 py-0.5 rounded-full bg-surface-container-lowest text-on-surface-variant font-medium">{colTasks.length}</span>
                 </div>
-                <button className={btn.icon} onClick={() => setAdding(col.key)} aria-label={`Add task to ${col.label}`}><Icon name="add" className="text-[18px]" /></button>
+                <button className={btn.icon} onClick={() => setAdding(col.key)} aria-label={tr("Add task to {{0}}",col.label)}><Icon name="add" className="text-[18px]" /></button>
               </header>
 
               <div className="flex flex-col gap-2">
@@ -135,7 +135,7 @@ export default function Board() {
                         <div className="flex items-start gap-2">
                           <button
                             onClick={() => toggleTaskDone(t.id)}
-                            aria-label={t.status === 'done' ? `Reopen “${t.title}”` : `Complete “${t.title}”`}
+                            aria-label={t.status === 'done' ? tr("Reopen “{{0}}”",t.title) : tr("Complete “{{0}}”",t.title)}
                             className={`mt-0.5 w-5 h-5 shrink-0 rounded-md flex items-center justify-center cursor-pointer transition-colors ${t.status === 'done' ? 'bg-success text-white' : 'bg-surface-container-high text-transparent hover:text-primary'}`}
                           >
                             <Icon name="check" className="text-[15px]" />
@@ -147,7 +147,7 @@ export default function Board() {
                           <select
                             value={t.status}
                             onChange={e => moveTo(String(t.id), e.target.value as Task['status'])}
-                            aria-label={`Move “${t.title}”`}
+                            aria-label={tr("Move “{{0}}”",t.title)}
                             className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-[12px] bg-surface-container-low rounded-md px-1 py-0.5 cursor-pointer outline-none"
                           >
                             {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
@@ -175,7 +175,7 @@ export default function Board() {
 
                 {colTasks.length === 0 && adding !== col.key && (
                   <div className="text-center text-[12px] text-on-surface-variant py-8 border-2 border-dashed border-outline-variant rounded-xl">
-                    {isOver ? 'Drop here' : 'No tasks'}
+                    {isOver ? tr("Drop here") : tr("No tasks")}
                   </div>
                 )}
 
@@ -187,15 +187,14 @@ export default function Board() {
                       onChange={e => setQuickAdd(q => ({ ...q, [col.key]: e.target.value }))}
                       onKeyDown={e => { if (e.key === 'Enter') submitQuick(col.key); if (e.key === 'Escape') setAdding(null); }}
                       onBlur={() => submitQuick(col.key)}
-                      placeholder="Task title, then Enter"
+                      placeholder={tr("Task title, then Enter")}
                       className="w-full px-2 py-1.5 bg-transparent outline-none"
-                      aria-label={`New task in ${col.label}`}
+                      aria-label={tr("New task in {{0}}",col.label)}
                     />
                   </div>
                 ) : (
                   <button onClick={() => setAdding(col.key)} className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container-lowest hover:text-on-surface text-[13px] cursor-pointer transition-colors">
-                    <Icon name="add" className="text-[18px]" />Add task
-                  </button>
+                    <Icon name="add" className="text-[18px]" />{tr("Add task")}</button>
                 )}
               </div>
             </section>

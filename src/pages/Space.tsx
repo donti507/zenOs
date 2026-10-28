@@ -1,3 +1,4 @@
+import {tr,useUiLanguage,uiLocale} from '../i18n';
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useZenos } from "../context/ZenosContext";
@@ -27,6 +28,7 @@ type Status = {
   authRequired: boolean;
 };
 export default function Space() {
+  useUiLanguage();
   const { slug } = useParams();
   const [searchParams] = useSearchParams();
   const arenaTab = !slug && searchParams.get("tab") === "arena";
@@ -276,41 +278,37 @@ export default function Space() {
       const page = await setSpacePermissions(snapshot, noSpacePermissions());
       if (!signal.aborted) setSnapshot({ ...snapshot, page });
     });
-  const tabs = <nav aria-label="My Space tabs" className="flex flex-wrap gap-2">
-    <Link className={arenaTab ? btn.secondary : btn.solid} to="/space" aria-current={!arenaTab ? 'page' : undefined}>My pages</Link>
-    <Link className={btn.secondary} to="/gallery">Gallery</Link>
-    <Link className={arenaTab ? btn.solid : btn.secondary} to="/space?tab=arena" aria-current={arenaTab ? 'page' : undefined}>Model Arena</Link>
+  const tabs = <nav aria-label={tr("My Space tabs")} className="flex flex-wrap gap-2">
+    <Link className={arenaTab ? btn.secondary : btn.solid} to="/space" aria-current={!arenaTab ? 'page' : undefined}>{tr("My pages")}</Link>
+    <Link className={btn.secondary} to="/gallery">{tr("Gallery")}</Link>
+    <Link className={arenaTab ? btn.solid : btn.secondary} to="/space?tab=arena" aria-current={arenaTab ? 'page' : undefined}>{tr("Model Arena")}</Link>
   </nav>;
-  if (arenaTab) return <div className="min-w-0 space-y-5"><PageHeader title="My Space" subtitle="Compare models with your own prompts."/>{tabs}<ModelArena/></div>;
+  if (arenaTab) return <div className="min-w-0 space-y-5"><PageHeader title={tr("My Space")} subtitle={tr("Compare models with your own prompts.")}/>{tabs}<ModelArena/></div>;
   const blocked =
     !status?.ready || !model || (status.authRequired && isOffline);
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        title={snapshot?.page.title || "My Space"}
-        subtitle="Private pages you build by chatting with AI."
+        title={snapshot?.page.title || tr("My Space")}
+        subtitle={tr("Private pages you build by chatting with AI.")}
       />
       {tabs}
       <div className="flex flex-wrap gap-2">
-        <Link className={btn.secondary} to="/space">
-          All pages
-        </Link>
+        <Link className={btn.secondary} to="/space">{tr("All pages")}</Link>
         <button
           className={btn.secondary}
           disabled={busy || loading}
           onClick={() => void refresh()}
-        >
-          Refresh
-        </button>
-        {snapshot && <button type="button" className={btn.secondary} disabled={busy || loading || blocked} onClick={() => setLiveOpen(true)}>Edit by voice</button>}
-        {snapshot && <button type="button" role="switch" aria-checked={learnMode} className={learnMode ? btn.solid : btn.secondary} onClick={() => setLearnMode(value => !value)}>Learn mode</button>}
+        >{tr("Refresh")}</button>
+        {snapshot && <button type="button" className={btn.secondary} disabled={busy || loading || blocked} onClick={() => setLiveOpen(true)}>{tr("Edit by voice")}</button>}
+        {snapshot && <button type="button" role="switch" aria-checked={learnMode} className={learnMode ? btn.solid : btn.secondary} onClick={() => setLearnMode(value => !value)}>{tr("Learn mode")}</button>}
         {snapshot && <details className="relative">
-          <summary className={`${btn.secondary} cursor-pointer`}>Page menu</summary>
+          <summary className={`${btn.secondary} cursor-pointer`}>{tr("Page menu")}</summary>
           <div className={`${card} absolute z-10 mt-2 p-3 min-w-52 space-y-2`}>
-            <button className={btn.secondary} disabled={busy} onClick={()=>setPublishOpen(true)}>Publish to gallery</button>
+            <button className={btn.secondary} disabled={busy} onClick={()=>setPublishOpen(true)}>{tr("Publish to gallery")}</button>
             {spacePages.find(page => page.id === snapshot.page.id)?.dashboardSize ?
-              <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"unpin"))}>Unpin from Home</button> :
-              <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"small"))}>Pin to Home</button>}
+              <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"unpin"))}>{tr("Unpin from Home")}</button> :
+              <button className={btn.secondary} disabled={busy} onClick={() => void run(async () => changeSpaceWidget(snapshot.page.id,"small"))}>{tr("Pin to Home")}</button>}
           </div>
         </details>}
         {busy && (
@@ -324,9 +322,7 @@ export default function Space() {
                 "Stopped. A completed edit may already be saved; refresh history before retrying.",
               );
             }}
-          >
-            Stop
-          </button>
+          >{tr("Stop")}</button>
         )}
       </div>
       {(error || spacePagesError) && (
@@ -338,13 +334,10 @@ export default function Space() {
         <>
           <section
             className={`${card} p-5 space-y-4`}
-            aria-label="Create a personal page"
+            aria-label={tr("Create a personal page")}
           >
-            <h2 className="font-semibold">Create a page</h2>
-            <p className="text-sm text-on-surface-variant">
-              Only you can open your pages. Give one a name, then describe what
-              you want to build.
-            </p>
+            <h2 className="font-semibold">{tr("Create a page")}</h2>
+            <p className="text-sm text-on-surface-variant">{tr("Only you can open your pages. Give one a name, then describe what you want to build.")}</p>
             <form
               className="space-y-3"
               onSubmit={(event) => {
@@ -352,9 +345,7 @@ export default function Space() {
                 void create();
               }}
             >
-              <label className="block text-sm">
-                Page title
-                <input
+              <label className="block text-sm">{tr("Page title")}<input
                   className={`${input} mt-1`}
                   maxLength={80}
                   value={title}
@@ -372,11 +363,7 @@ export default function Space() {
                   }}
                 />
               </label>
-              <label className="block text-sm">
-                Page address
-                <span className="block text-xs text-on-surface-variant mt-1">
-                  /space/
-                </span>
+              <label className="block text-sm">{tr("Page address")}<span className="block text-xs text-on-surface-variant mt-1">{tr(" /space/ ")}</span>
                 <input
                   className={`${input} mt-1`}
                   value={address}
@@ -392,12 +379,12 @@ export default function Space() {
                 className={btn.solid}
                 disabled={busy || !title.trim() || !address.trim()}
               >
-                {busy ? "Creating…" : "Create page"}
+                {busy ? tr("Creating…") : tr("Create page")}
               </button>
             </form>
           </section>
-          <section className="space-y-3" aria-label="Your private pages">
-            {spacePagesLoading && <p role="status">Loading pages…</p>}
+          <section className="space-y-3" aria-label={tr("Your private pages")}>
+            {spacePagesLoading && <p role="status">{tr("Loading pages…")}</p>}
             {spacePages.map((page) => (
               <Link
                 key={page.id}
@@ -405,41 +392,33 @@ export default function Space() {
                 className={`${card} block p-5 hover:ring-1 hover:ring-primary/30`}
               >
                 <h2 className="font-semibold break-words">{page.title}</h2>
-                <p className="text-sm text-on-surface-variant break-all">
-                  /space/{page.slug} · Private
-                </p>
+                <p className="text-sm text-on-surface-variant break-all">{tr(" /space/")}{page.slug}{tr(" · Private")}</p>
               </Link>
             ))}
             {!spacePagesLoading && !spacePages.length && (
               <EmptyState
                 icon="dashboard_customize"
-                title="A place for your own ideas"
-                text="Build a timer, study dashboard, habit tracker or another small page."
+                title={tr("A place for your own ideas")}
+                text={tr("Build a timer, study dashboard, habit tracker or another small page.")}
               />
             )}
           </section>
         </>
       ) : loading ? (
-        <p role="status" className="text-on-surface-variant">
-          Loading your page…
-        </p>
+        <p role="status" className="text-on-surface-variant">{tr("Loading your page…")}</p>
       ) : snapshot ? (
         <>
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px] gap-6 items-start">
             <div className="min-w-0 space-y-5">
-              {snapshot.page.remixSource&&<p className="text-sm text-on-surface-variant break-words">Remixed from <Link className="text-primary underline" to={`/gallery/${snapshot.page.remixSource.id}`}>{snapshot.page.remixSource.title}</Link> by {snapshot.page.remixSource.author}.{snapshot.page.remixSource.original&&<> Originally by <Link className="text-primary underline" to={`/gallery/${snapshot.page.remixSource.original.id}`}>{snapshot.page.remixSource.original.author}</Link>.</>}</p>}
+              {snapshot.page.remixSource&&<p className="text-sm text-on-surface-variant break-words">{tr("Remixed from ")}<Link className="text-primary underline" to={`/gallery/${snapshot.page.remixSource.id}`}>{snapshot.page.remixSource.title}</Link>{tr(" by ")}{snapshot.page.remixSource.author}.{snapshot.page.remixSource.original&&<>{tr(" Originally by ")}<Link className="text-primary underline" to={`/gallery/${snapshot.page.remixSource.original.id}`}>{snapshot.page.remixSource.original.author}</Link>.</>}</p>}
               <SpaceFrame snapshot={snapshot} />
               {learnMode && <SpaceLearn pageId={snapshot.page.id} versionId={learnVersion || snapshot.version.id} />}
               <section
                 className={`${card} p-5 space-y-3`}
-                aria-label="Page data permissions"
+                aria-label={tr("Page data permissions")}
               >
-                <h2 className="font-semibold">Data access</h2>
-                <p className="text-sm text-on-surface-variant">
-                  Tasks: {snapshot.page.permissions.tasks ? "on" : "off"} ·
-                  Events: {snapshot.page.permissions.events ? "on" : "off"}.
-                  Changes and restores turn both off.
-                </p>
+                <h2 className="font-semibold">{tr("Data access")}</h2>
+                <p className="text-sm text-on-surface-variant">{tr("Tasks: ")}{snapshot.page.permissions.tasks ? "on" : "off"}{tr(" · Events: ")}{snapshot.page.permissions.events ? "on" : "off"}{tr(". Changes and restores turn both off.")}</p>
                 <div className="flex flex-wrap gap-2">
                   <button
                     className={btn.secondary}
@@ -448,25 +427,19 @@ export default function Space() {
                       setPermissions(snapshot.page.permissions);
                       setPermissionOpen(true);
                     }}
-                  >
-                    Manage page access
-                  </button>
+                  >{tr("Manage page access")}</button>
                   {(snapshot.page.permissions.tasks ||
                     snapshot.page.permissions.events) && (
                     <button
                       className={btn.secondary}
                       disabled={busy}
                       onClick={() => void revoke()}
-                    >
-                      Revoke all access
-                    </button>
+                    >{tr("Revoke all access")}</button>
                   )}
                 </div>
               </section>
               <details className={`${card} p-5`}>
-                <summary className="cursor-pointer font-medium">
-                  View saved code
-                </summary>
+                <summary className="cursor-pointer font-medium">{tr("View saved code")}</summary>
                 {(["html", "css", "js"] as const).map((type) => (
                   <label key={type} className="block text-sm uppercase mt-4">
                     {type}
@@ -483,16 +456,11 @@ export default function Space() {
             <div className="min-w-0 space-y-5">
               <section
                 className={`${card} p-5 space-y-4`}
-                aria-label="Chat with page builder"
+                aria-label={tr("Chat with page builder")}
               >
-                <h2 className="font-semibold">Build with AI</h2>
-                <p className="text-sm text-on-surface-variant">
-                  Each edit saves a version and uses one Dante message. Only
-                  this page’s code and edit history go to the model.
-                </p>
-                <label className="block text-sm">
-                  Model
-                  <select
+                <h2 className="font-semibold">{tr("Build with AI")}</h2>
+                <p className="text-sm text-on-surface-variant">{tr("Each edit saves a version and uses one Dante message. Only this page’s code and edit history go to the model.")}</p>
+                <label className="block text-sm">{tr("Model")}<select
                     className={`${input} mt-1`}
                     value={model}
                     disabled={busy || !status?.ready}
@@ -512,14 +480,12 @@ export default function Space() {
                     void edit();
                   }}
                 >
-                  <label className="block text-sm">
-                    Describe your edit
-                    <textarea
+                  <label className="block text-sm">{tr("Describe your edit")}<textarea
                       className={`${textarea} mt-1`}
                       maxLength={2000}
                       value={prompt}
                       disabled={busy}
-                      placeholder="Build a weekly study dashboard with a focus timer…"
+                      placeholder={tr("Build a weekly study dashboard with a focus timer…")}
                       onChange={(event) => setPrompt(event.target.value)}
                     />
                   </label>
@@ -528,24 +494,22 @@ export default function Space() {
                     disabled={busy || blocked || !prompt.trim()}
                   >
                     {busy
-                      ? "Building and saving…"
+                      ? tr("Building and saving…")
                       : attempt.current
-                        ? "Retry edit"
-                        : "Send edit"}
+                        ? tr("Retry edit")
+                        : tr("Send edit")}
                   </button>
                 </form>
                 {blocked && (
                   <p className="text-xs text-on-surface-variant">
                     {status?.authRequired && isOffline
-                      ? "Sign in to use AI editing on this server."
+                      ? tr("Sign in to use AI editing on this server.")
                       : status?.problem ||
-                        "AI page editing needs a configured server model."}
+                        tr("AI page editing needs a configured server model.")}
                   </p>
                 )}
                 {busy && (
-                  <p role="status" className="text-primary text-sm">
-                    Working on this page. Keep it open while the edit is saved.
-                  </p>
+                  <p role="status" className="text-primary text-sm">{tr("Working on this page. Keep it open while the edit is saved.")}</p>
                 )}
                 {history
                   .filter((row) => row.kind === "ai")
@@ -557,11 +521,11 @@ export default function Space() {
                       className="space-y-2 border-t border-outline-variant pt-3 text-sm"
                     >
                       <p className="whitespace-pre-wrap break-words">
-                        <span className="font-medium">You: </span>
+                        <span className="font-medium">{tr("You: ")}</span>
                         {row.prompt}
                       </p>
                       <p className="whitespace-pre-wrap break-words text-on-surface-variant">
-                        <span className="font-medium">Builder: </span>
+                        <span className="font-medium">{tr("Builder: ")}</span>
                         {row.reply}
                       </p>
                     </div>
@@ -570,13 +534,10 @@ export default function Space() {
               {!isOffline && <DanteUsageNotice />}
               <section
                 className={`${card} p-5 space-y-3`}
-                aria-label="Page version timeline"
+                aria-label={tr("Page version timeline")}
               >
-                <h2 className="font-semibold">Save points</h2>
-                <p className="text-xs text-on-surface-variant">
-                  Restore creates a new save point. Earlier versions remain
-                  available.
-                </p>
+                <h2 className="font-semibold">{tr("Save points")}</h2>
+                <p className="text-xs text-on-surface-variant">{tr("Restore creates a new save point. Earlier versions remain available.")}</p>
                 <ol className="space-y-3">
                   {history.map((row) => (
                     <li
@@ -586,14 +547,14 @@ export default function Space() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-sm font-medium">
                           {row.kind === "initial"
-                            ? "Created"
+                            ? tr("Created")
                             : row.kind === "restore"
-                              ? "Restored"
-                              : "AI edit"}
-                          {row.id === snapshot.version.id ? " · Current" : ""}
+                              ? tr("Restored")
+                              : tr("AI edit")}
+                          {row.id === snapshot.version.id ? tr(" · Current") : ""}
                         </span>
                         <time className="text-xs text-on-surface-variant">
-                          {new Date(row.createdAt).toLocaleString()}
+                          {new Date(row.createdAt).toLocaleString(uiLocale())}
                         </time>
                       </div>
                       {row.prompt && (
@@ -606,14 +567,12 @@ export default function Space() {
                           {row.model}
                         </p>
                       )}
-                      {learnMode && <button className={`${btn.secondary} text-sm`} onClick={() => setLearnVersion(row.id)} aria-pressed={(learnVersion || snapshot.version.id) === row.id}>Explain this version</button>}
+                      {learnMode && <button className={`${btn.secondary} text-sm`} onClick={() => setLearnVersion(row.id)} aria-pressed={(learnVersion || snapshot.version.id) === row.id}>{tr("Explain this version")}</button>}
                       <button
                         className={`${btn.secondary} text-sm`}
                         disabled={busy || row.id === snapshot.version.id}
                         onClick={() => setRestore(row)}
-                      >
-                        Restore this version
-                      </button>
+                      >{tr("Restore this version")}</button>
                     </li>
                   ))}
                 </ol>
@@ -626,9 +585,7 @@ export default function Space() {
                         readHistory(snapshot.page.id, history.length),
                       )
                     }
-                  >
-                    Load older versions
-                  </button>
+                  >{tr("Load older versions")}</button>
                 )}
               </section>
             </div>
@@ -637,39 +594,31 @@ export default function Space() {
       ) : !error ? (
         <EmptyState
           icon="dashboard_customize"
-          title="Page not found"
-          text="Choose one of your pages or create a new one."
+          title={tr("Page not found")}
+          text={tr("Choose one of your pages or create a new one.")}
         />
       ) : null}
       {publishOpen&&snapshot&&<PublishSpace snapshot={snapshot} onClose={()=>setPublishOpen(false)}/>}
       <Modal
         open={permissionOpen}
         onClose={() => !busy && setPermissionOpen(false)}
-        title="Allow this page to read data?"
+        title={tr("Allow this page to read data?")}
         footer={
           <>
             <button
               className={btn.secondary}
               disabled={busy}
               onClick={() => setPermissionOpen(false)}
-            >
-              Cancel
-            </button>
+            >{tr("Cancel")}</button>
             <button
               className={btn.solid}
               disabled={busy}
               onClick={() => void applyPermissions()}
-            >
-              Save access
-            </button>
+            >{tr("Save access")}</button>
           </>
         }
       >
-        <p className="text-sm text-on-surface-variant">
-          This version’s JavaScript can read and display the selected fields. It
-          cannot change app data. Notes, cookies, account details and tokens are
-          never shared. Future edits and restores require permission again.
-        </p>
+        <p className="text-sm text-on-surface-variant">{tr("This version’s JavaScript can read and display the selected fields. It cannot change app data. Notes, cookies, account details and tokens are never shared. Future edits and restores require permission again.")}</p>
         <label className="flex gap-3 items-start">
           <input
             type="checkbox"
@@ -682,9 +631,7 @@ export default function Space() {
               }))
             }
           />
-          <span>
-            Tasks: titles, status, due dates and progress (up to 200).
-          </span>
+          <span>{tr("Tasks: titles, status, due dates and progress (up to 200).")}</span>
         </label>
         <label className="flex gap-3 items-start">
           <input
@@ -698,39 +645,29 @@ export default function Space() {
               }))
             }
           />
-          <span>
-            Events: titles and times from meetings and connected Calendar events
-            (up to 200).
-          </span>
+          <span>{tr("Events: titles and times from meetings and connected Calendar events (up to 200).")}</span>
         </label>
       </Modal>
       <Modal
         open={!!restore}
         onClose={() => !busy && setRestore(null)}
-        title="Restore this version?"
+        title={tr("Restore this version?")}
         footer={
           <>
             <button
               className={btn.secondary}
               disabled={busy}
               onClick={() => setRestore(null)}
-            >
-              Cancel
-            </button>
+            >{tr("Cancel")}</button>
             <button
               className={btn.solid}
               disabled={busy}
               onClick={() => void restoreVersion()}
-            >
-              Restore version
-            </button>
+            >{tr("Restore version")}</button>
           </>
         }
       >
-        <p>
-          The current page will switch to this saved code. A new version will be
-          added to the timeline and data permissions will be turned off.
-        </p>
+        <p>{tr("The current page will switch to this saved code. A new version will be added to the timeline and data permissions will be turned off.")}</p>
       </Modal>
     </div>
   );

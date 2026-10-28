@@ -1,3 +1,5 @@
+import LanguageSwitcher from '../LanguageSwitcher';
+import {tr,useUiLanguage} from '../../i18n';
 import WorkspaceSwitcher from '../WorkspaceSwitcher';
 import AccountControls from '../AccountControls';
 import { useState } from 'react';
@@ -6,18 +8,18 @@ import { useZenos } from '../../context/ZenosContext';
 import { categoryTone } from '../../lib/utils';
 
 const NAV = [
-  { to:'/workspaces',label:'Workspaces',icon:'group' },
-  { to: '/', label: 'Home', icon: 'home' },
-  { to: '/board', label: 'Board', icon: 'view_kanban' },
-  { to: '/calendar', label: 'Calendar', icon: 'calendar_today' },
-  { to: '/focus-rooms', label: 'Focus Rooms', icon: 'groups' },
-  { to: '/gallery', label: 'Gallery', icon: 'public' },
-  { to: '/space', label: 'My Space', icon: 'dashboard_customize' },
-  { to: '/search', label: 'Search', icon: 'search' },
-  { to: '/lectures', label: 'Lectures', icon: 'school' },
-  { to: '/meetings', label: 'Meetings', icon: 'videocam' },
-  { to: '/analytics', label: 'Analytics', icon: 'monitoring' },
-  { to: '/vault', label: 'Vault', icon: 'folder_special' },
+  { to:'/workspaces',get label(){return tr("Workspaces");},icon:'group' },
+  { to: '/', get label(){return tr("Home");}, icon: 'home' },
+  { to: '/board', get label(){return tr("Board");}, icon: 'view_kanban' },
+  { to: '/calendar', get label(){return tr("Calendar");}, icon: 'calendar_today' },
+  { to: '/focus-rooms', get label(){return tr("Focus Rooms");}, icon: 'groups' },
+  { to: '/gallery', get label(){return tr("Gallery");}, icon: 'public' },
+  { to: '/space', get label(){return tr("My Space");}, icon: 'dashboard_customize' },
+  { to: '/search', get label(){return tr("Search");}, icon: 'search' },
+  { to: '/lectures', get label(){return tr("Lectures");}, icon: 'school' },
+  { to: '/meetings', get label(){return tr("Meetings");}, icon: 'videocam' },
+  { to: '/analytics', get label(){return tr("Analytics");}, icon: 'monitoring' },
+  { to: '/vault', get label(){return tr("Vault");}, icon: 'folder_special' },
 ];
 
 const navClass = (collapsed: boolean) => ({ isActive }: { isActive: boolean }) =>
@@ -28,6 +30,7 @@ const navClass = (collapsed: boolean) => ({ isActive }: { isActive: boolean }) =
   }`;
 
 export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  useUiLanguage();
   const { state, updateState, user, logOut, setShowModal, isOffline, spacePages } = useZenos();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -52,7 +55,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <div className="px-2 mb-2">
           <NavLink
             to="/dante"
-            title="Ask Dante"
+            title={tr("Ask Dante")}
             className={({ isActive }) =>
               `group relative flex items-center ${collapsed ? 'justify-center' : 'justify-between px-4'} py-2 rounded-lg transition-all ${
                 isActive ? 'bg-surface-container ring-1 ring-primary/20' : 'bg-surface-container-low hover:bg-surface-container'
@@ -64,16 +67,16 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
                 <span className="absolute w-4 h-4 rounded-full bg-primary-container blur-[3px]" style={{ animation: 'dante-breath 3s infinite ease-in-out' }} />
                 <span className="relative material-symbols-outlined text-[18px] text-primary">auto_awesome</span>
               </div>
-              {!collapsed && <span className="font-medium text-on-surface">Ask Dante</span>}
+              {!collapsed && <span className="font-medium text-on-surface">{tr("Ask Dante")}</span>}
             </div>
             {!collapsed && (
-              <span className="text-[11px] leading-[14px] px-1.5 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-semibold tracking-wider">AI</span>
+              <span className="text-[11px] leading-[14px] px-1.5 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-semibold tracking-wider">{tr("AI")}</span>
             )}
           </NavLink>
         </div>
 
         {/* Main nav */}
-        <nav className="px-2 flex flex-col gap-1" aria-label="Main">
+        <nav className="px-2 flex flex-col gap-1" aria-label={tr("Main")}>
           {NAV.map(item => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'} className={navClass(collapsed)} title={collapsed ? item.label : undefined}>
               <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
@@ -82,13 +85,13 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           ))}
         </nav>
 
-        {!collapsed&&!!spacePages?.length&&<nav className="mt-5 px-4 space-y-1" aria-label="My Space pages"><span className="block text-xs font-semibold text-on-surface-variant mb-2">Your pages</span>{spacePages.map(page=><NavLink key={page.id} to={`/space/${page.slug}`} className={({isActive})=>`block px-2 py-1.5 rounded-lg truncate text-sm ${isActive?'bg-primary-container text-on-primary-container':'text-on-surface-variant hover:bg-surface-container'}`} title={page.title}>{page.title}</NavLink>)}</nav>}
+        {!collapsed&&!!spacePages?.length&&<nav className="mt-5 px-4 space-y-1" aria-label={tr("My Space pages")}><span className="block text-xs font-semibold text-on-surface-variant mb-2">{tr("Your pages")}</span>{spacePages.map(page=><NavLink key={page.id} to={`/space/${page.slug}`} className={({isActive})=>`block px-2 py-1.5 rounded-lg truncate text-sm ${isActive?'bg-primary-container text-on-primary-container':'text-on-surface-variant hover:bg-surface-container'}`} title={page.title}>{page.title}</NavLink>)}</nav>}
         {/* Categories */}
         {!collapsed && (
           <div className="mt-6 px-4">
             <div className="flex items-center justify-between pb-1">
-              <span className="text-[12px] text-on-surface-variant font-semibold">Categories</span>
-              <button className="text-on-surface-variant hover:text-on-surface cursor-pointer" type="button" onClick={() => setShowModal('addCategory')} aria-label="Add category">
+              <span className="text-[12px] text-on-surface-variant font-semibold">{tr("Categories")}</span>
+              <button className="text-on-surface-variant hover:text-on-surface cursor-pointer" type="button" onClick={() => setShowModal('addCategory')} aria-label={tr("Add category")}>
                 <span className="material-symbols-outlined text-[16px]">add</span>
               </button>
             </div>
@@ -118,9 +121,10 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         )}
       </div>
 
+      {!collapsed&&<div className="px-3 pb-1"><LanguageSwitcher /></div>}
       {/* User */}
       <div className={`relative p-2 bg-surface-container-low m-2 rounded-xl flex items-center ${collapsed ? 'flex-col gap-2' : 'justify-between'}`}>
-        <button className="flex items-center gap-2 min-w-0 cursor-pointer text-left" onClick={() => setMenuOpen(o => !o)} aria-expanded={menuOpen} aria-label="Account menu">
+        <button className="flex items-center gap-2 min-w-0 cursor-pointer text-left" onClick={() => setMenuOpen(o => !o)} aria-expanded={menuOpen} aria-label={tr("Account menu")}>
           <div className="relative shrink-0">
             <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center">
               <span className="text-[12px] font-semibold text-on-primary-container">{initials}</span>
@@ -130,11 +134,11 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           {!collapsed && (
             <div className="flex flex-col min-w-0">
               <span className="font-medium text-on-surface truncate leading-none">{name}</span>
-              <span className="text-[11px] text-on-surface-variant mt-1 truncate">{isOffline ? 'Local mode' : 'Synced'}</span>
+              <span className="text-[11px] text-on-surface-variant mt-1 truncate">{isOffline ? tr("Local mode") : tr("Synced")}</span>
             </div>
           )}
         </button>
-        <button aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} className="text-on-surface-variant hover:text-on-surface p-1 rounded-lg hover:bg-surface-container transition-colors cursor-pointer" type="button" onClick={onToggle}>
+        <button aria-label={collapsed ? tr("Expand sidebar") : tr("Collapse sidebar")} className="text-on-surface-variant hover:text-on-surface p-1 rounded-lg hover:bg-surface-container transition-colors cursor-pointer" type="button" onClick={onToggle}>
           <span className="material-symbols-outlined text-[18px]">{collapsed ? 'left_panel_open' : 'left_panel_close'}</span>
         </button>
 
@@ -147,8 +151,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
               role="menuitem"
               onClick={() => { setMenuOpen(false); logOut(); }}
             >
-              <span className="material-symbols-outlined text-[18px]">logout</span>Sign out
-            </button>
+              <span className="material-symbols-outlined text-[18px]">logout</span>{tr("Sign out")}</button>
           </div>
         )}
       </div>

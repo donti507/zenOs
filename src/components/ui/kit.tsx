@@ -1,3 +1,4 @@
+import {tr,useUiLanguage} from '../../i18n';
 import { ReactNode, useEffect, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { categoryTone } from '../../lib/utils';
@@ -18,6 +19,7 @@ export const textarea =
   'w-full px-3 py-2 rounded-lg bg-surface-container-low text-on-surface placeholder:text-on-surface-variant outline-none border border-transparent focus:border-primary/40 focus:ring-2 focus:ring-primary/15 transition resize-y min-h-[80px]';
 
 export function Icon({ name, className = '', fill = false }: { name: string; className?: string; fill?: boolean }) {
+  useUiLanguage();
   return (
     <span className={`material-symbols-outlined ${className}`} aria-hidden="true" style={fill ? { fontVariationSettings: "'FILL' 1" } : undefined}>
       {name}
@@ -26,6 +28,7 @@ export function Icon({ name, className = '', fill = false }: { name: string; cla
 }
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+  useUiLanguage();
   return (
     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
       <div>
@@ -38,6 +41,7 @@ export function PageHeader({ title, subtitle, actions }: { title: string; subtit
 }
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+  useUiLanguage();
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-[12px] font-semibold text-on-surface-variant">{label}</span>
@@ -48,6 +52,7 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 }
 
 export function EmptyState({ icon, title, text, action }: { icon: string; title: string; text?: string; action?: ReactNode }) {
+  useUiLanguage();
   return (
     <div className="flex flex-col items-center text-center gap-2 py-10 px-6">
       <div className="w-12 h-12 rounded-2xl bg-surface-container-low flex items-center justify-center">
@@ -61,11 +66,13 @@ export function EmptyState({ icon, title, text, action }: { icon: string; title:
 }
 
 export function CategoryChip({ cat }: { cat?: { id: string; label: string; color?: string } | null }) {
+  useUiLanguage();
   if (!cat) return null;
   return <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${categoryTone(cat).chip}`}>{cat.label}</span>;
 }
 
 export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; icon?: string }[]; onChange: (v: T) => void; label: string }) {
+  useUiLanguage();
   return (
     <div className="inline-flex p-1 rounded-lg bg-surface-container-low" role="radiogroup" aria-label={label}>
       {options.map(o => (
@@ -86,6 +93,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 
 /** Accessible modal: Escape closes, focus moves inside, backdrop click closes. */
 export function Modal({ open, onClose, title, children, footer, width = 480 }: { open: boolean; onClose: () => void; title: string; children: ReactNode; footer?: ReactNode; width?: number }) {
+  useUiLanguage();
   const reduce = useReducedMotion();
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -125,7 +133,7 @@ export function Modal({ open, onClose, title, children, footer, width = 480 }: {
           >
             <div className="flex items-center justify-between px-5 pt-5 pb-3">
               <h2 className="text-[18px] font-semibold text-on-surface">{title}</h2>
-              <button className={btn.icon} onClick={onClose} aria-label="Close">
+              <button className={btn.icon} onClick={onClose} aria-label={tr("Close")}>
                 <Icon name="close" className="text-[20px]" />
               </button>
             </div>

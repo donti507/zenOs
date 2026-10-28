@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-28: Added English/Polish interface selection with browser preference/persistence, localized public/app controls, dates and counts, Dante prompts/voice/recap copy, safe authored-content boundaries and live draft-preservation/catalogue tests; no new migration. (Codex)
+
 - 2026-10-28: Added private shared workspaces with owner/member roles, verified-email expiring invite links, scoped CRUD/RLS/Realtime and private Dante history/context, mobile/sidebar switching, recurrence/exam preservation and isolation tests; apply the complete migration. (Codex)
 
 - 2026-10-28: Added optional authenticated OpenAI-compatible server TTS with a separate atomic daily speech allowance, streamed bounded MP3 proxying, sentence-ordered Dante Live playback/lookahead, browser fallback and interruption/account cleanup tests; apply the migration and configure TTS variables. (Codex)

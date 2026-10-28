@@ -1,3 +1,4 @@
+import {getUiLanguage} from '../i18n';
 import { localSearchSources } from './search';
 import { recentMemory } from '../../shared/danteMemory';
 import { notifyDanteUsage } from './usageEvents';
@@ -57,6 +58,7 @@ export function buildDanteContext(state: ZenosState, googleEvents: any[], userNa
   const done = tasks.filter(t => t.status === 'done');
   return {
     mode,
+    uiLanguage:getUiLanguage(),
     workspaceId:state.workspaceId||null,
     localSearchSources: localMode ? localSearchSources(state).slice(0,100).map(row=>({...row,content:row.content.slice(0,2400)})) : undefined,
     memory: state.workspaceId?[]:recentMemory(state.danteMemory),

@@ -16,7 +16,7 @@ export function createWorkspaceContextReader(options:{env?:NodeJS.ProcessEnv;cli
   if(results.some(result=>result.error))throw new Error('Workspace unavailable');
   // Never carry client data/memory/retrieval/Google events from personal or another workspace.
   const [tasks,categories,meetings,vault]=results.map(r=>(r.data||[]).filter(row=>row.workspace_id===scope));
-  return {workspaceId:scope,mode:context.mode==='voice'?'voice':'chat',userName:context.userName,language:context.language,now:context.now,
+  return {workspaceId:scope,mode:context.mode==='voice'?'voice':'chat',userName:context.userName,uiLanguage:context.uiLanguage==='pl'?'pl':'en',language:context.language,now:context.now,
    tasks:tasks.map(t=>({id:t.id,title:t.title,status:t.status,date:t.date,cat:t.cat,progress:t.progress,note:t.note,repeat:t.recurrence,reminder:t.reminder})),
    categories:categories.map(c=>({id:c.id,label:c.label})),meetings:meetings.map(m=>({id:m.id,personName:m.person_name,date:m.date,time:m.time,subject:m.subject,status:m.status,notes:m.notes})),
    vault:vault.map(v=>({name:v.name,url:v.url,detail:v.detail})),memory:[],googleEvents:[],stats:{}};

@@ -1,3 +1,5 @@
+import {localizedAction} from '../../i18n/actions';
+import {tr,useUiLanguage,speechLocale} from '../../i18n';
 import DanteMemoryPanel from '../DanteMemoryPanel';
 import DanteUsageNotice from '../DanteUsageNotice';
 "use client";
@@ -25,12 +27,12 @@ import {
 import { runDanteActions, ActionResult } from "../../lib/danteActions";
 
 const VOICE_LANGS = [
-  { code: "en-US", label: "English (US)" },
-  { code: "en-GB", label: "English (UK)" },
+  { code: "en-US", get label(){return tr("English (US)");} },
+  { code: "en-GB", get label(){return tr("English (UK)");} },
   { code: "pl-PL", label: "Polski" },
-  { code: "de-DE", label: "Deutsch" },
-  { code: "es-ES", label: "Español" },
-  { code: "fr-FR", label: "Français" },
+  { code: "de-DE", get label(){return tr("Deutsch");} },
+  { code: "es-ES", get label(){return tr("Español");} },
+  { code: "fr-FR", get label(){return tr("Français");} },
   { code: "uk-UA", label: "Українська" },
 ];
 const VIEWS = ["dashboard", "kanban", "calendar", "meetings", "analytics", "vault", "dante", "lectures", "search", "space"];
@@ -51,6 +53,7 @@ const savePref = (key: string, v: unknown) => {
 };
 
 export default function DanteAI() {
+  const uiLanguage=useUiLanguage();
   const {
     state,
     stateRef,
@@ -80,7 +83,9 @@ export default function DanteAI() {
   const [dismissedActions, setDismissedActions] = useState<Record<number, boolean>>(() => loadPref("zenos_dismissed_actions", {}));
 
   // Voice preferences (remembered between sessions)
-  const [voiceLang, setVoiceLang] = useState<string>(() => loadPref("zenos_voice_lang", "en-US"));
+  const [voiceLang, setVoiceLang] = useState<string>(() => loadPref("zenos_voice_lang", speechLocale()));
+  const previousUiLanguage=useRef(uiLanguage);
+  useEffect(()=>{if(previousUiLanguage.current!==uiLanguage){previousUiLanguage.current=uiLanguage;setVoiceLang(speechLocale());}},[uiLanguage]);
   const [ttsOn, setTtsOn] = useState<boolean>(() => loadPref("zenos_tts_on", false));
   const [handsFree, setHandsFree] = useState(false);
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
@@ -304,7 +309,7 @@ export default function DanteAI() {
         className="mt-2 p-3 bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant flex flex-col gap-2"
       >
         <div className="text-[10px] font-mono text-text3">
-          {results ? `Dante made ${rows.length === 1 ? "this change" : `${rows.length} changes`}` : "Earlier change"}
+          {results ? tr("Dante changes: {{0}}",rows.length) : tr("Earlier change")}
         </div>
         <ul className="flex flex-col gap-1">
           {rows.map((r, i) => (
@@ -313,8 +318,8 @@ export default function DanteAI() {
                 {!results ? "history" : r.ok ? "check_circle" : "error"}
               </span>
               <span>
-                {r.label}
-                {r.detail && <span className="text-text3"> — {r.detail}</span>}
+                {localizedAction(r.label)}
+                {r.detail && <span className="text-text3"> — {localizedAction(r.detail)}</span>}
               </span>
             </li>
           ))}
@@ -322,9 +327,7 @@ export default function DanteAI() {
         <button
           onClick={() => dismissActionCard(m.ts)}
           className="self-end px-2.5 py-1 bg-primary/20 hover:bg-primary text-primary hover:text-[#1a0a00] border border-primary text-[10px] font-mono font-bold rounded-xl cursor-pointer"
-        >
-          Dismiss
-        </button>
+        >{tr("Dismiss")}</button>
       </motion.div>
     );
   };
@@ -334,7 +337,7 @@ export default function DanteAI() {
     "Which tasks are overdue?",
     "Add a task to polish design assets tomorrow",
     "Schedule a sync with the team tomorrow at 16:00",
-  ];
+  ].map(text=>tr(text));
 
   const aiUnavailable = !!status && !status.ready;
   const authBlocked = !!status?.authRequired && isOffline;
@@ -357,16 +360,16 @@ export default function DanteAI() {
           <div className="font-mono text-[10px] text-text3 flex items-center gap-1.5 truncate">
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${aiUnavailable ? "bg-red" : loading ? "bg-primary animate-ping" : "bg-green"}`} />
             {speech.listening
-              ? "Listening…"
+              ? tr("Listening…")
               : tts.speakingId !== null
-                ? "Speaking… (Esc to stop)"
+                ? tr("Speaking… (Esc to stop)")
                 : loading
-                  ? "Thinking…"
+                  ? tr("Thinking…")
                   : aiUnavailable
-                    ? "AI not configured"
+                    ? tr("AI not configured")
                     : status?.model
-                      ? `Ready · ${status.model}`
-                      : "Ready"}
+                      ? tr("Ready · {{0}}",status.model)
+                      : tr("Ready")}
           </div>
         </div>
 
@@ -374,10 +377,10 @@ export default function DanteAI() {
           <button
             className="px-3 py-1.5 text-[12px] font-semibold flex items-center gap-1.5 rounded-full cursor-pointer bg-gradient-to-r from-primary-container to-tertiary-container text-white hover:brightness-110"
             onClick={() => { tts.stop(); speech.cancel(); setLiveOpen(true); }}
-            title="Talk to Dante hands-free (Ctrl+Shift+Space)"
+            title={tr("Talk to Dante hands-free (Ctrl+Shift+Space)")}
           >
             <span className="material-symbols-outlined text-[16px] leading-none">graphic_eq</span>
-            <span>Live</span>
+            <span>{tr("Live")}</span>
           </button>
 
           {tts.supported && (
@@ -387,14 +390,14 @@ export default function DanteAI() {
                 if (ttsOn) tts.stop();
                 setTtsOn(!ttsOn);
               }}
-              title={ttsOn ? "Stop reading answers aloud" : "Read answers aloud"}
+              title={ttsOn ? tr("Stop reading answers aloud") : tr("Read answers aloud")}
               aria-pressed={ttsOn}
             >
               <span className="material-symbols-outlined text-[15px] leading-none">{ttsOn ? "volume_up" : "volume_off"}</span>
             </button>
           )}
 
-          <button className="w-9 h-9 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface cursor-pointer" onClick={() => setShowVoiceMenu(v => !v)} title="Voice language" aria-expanded={showVoiceMenu}>
+          <button className="w-9 h-9 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface cursor-pointer" onClick={() => setShowVoiceMenu(v => !v)} title={tr("Voice language")} aria-expanded={showVoiceMenu}>
             <span className="material-symbols-outlined text-[17px]">translate</span>
           </button>
           {showVoiceMenu && (
@@ -420,13 +423,13 @@ export default function DanteAI() {
           <button
             className="w-9 h-9 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface cursor-pointer"
             onClick={() => {
-              if (confirm("Clear the conversation with Dante?")) {
+              if (confirm(tr("Clear the conversation with Dante?"))) {
                 tts.stop();
                 clearDanteHistory();
                 setActionResults({});
               }
             }}
-            title="Clear conversation"
+            title={tr("Clear conversation")}
           >
             <span className="material-symbols-outlined text-[17px]">delete_sweep</span>
           </button>
@@ -438,8 +441,8 @@ export default function DanteAI() {
           <span className="material-symbols-outlined text-[16px] text-red">warning</span>
           <span>
             {authBlocked
-              ? "You're in local mode. Sign in with your account to use Dante on this server."
-              : `Dante can't answer yet: ${status?.problem}`}
+              ? tr("You're in local mode. Sign in with your account to use Dante on this server.")
+              : tr("Dante can't answer yet: {{0}}",status?.problem)}
           </span>
         </div>
       )}
@@ -449,10 +452,7 @@ export default function DanteAI() {
         {state.danteHistory.length === 0 && !loading && (
           <div className="flex gap-2.5 max-w-[85%]">
             <DanteOrb size={28} className="mt-1" />
-            <div className="bg-surface-container-low rounded-2xl rounded-tl-md px-4 py-3 text-[14px] leading-relaxed">
-              Hi{userName ? ` ${userName}` : ""}, I'm Dante. I can see your tasks, meetings and calendar.
-              Ask me what to focus on, or tell me to add, complete or reschedule things. Type, tap the mic, or start a hands-free conversation.
-            </div>
+            <div className="bg-surface-container-low rounded-2xl rounded-tl-md px-4 py-3 text-[14px] leading-relaxed">{tr("Hi")}{userName ? ` ${userName}` : ""}{tr(", I'm Dante. I can see your tasks, meetings and calendar. Ask me what to focus on, or tell me to add, complete or reschedule things. Type, tap the mic, or start a hands-free conversation.")}</div>
           </div>
         )}
 
@@ -483,15 +483,14 @@ export default function DanteAI() {
                           onClick={() => (tts.speakingId === m.ts ? tts.stop() : tts.speak(toSpeech(m.content), m.ts))}
                         >
                           <span className="material-symbols-outlined text-[14px]">{tts.speakingId === m.ts ? "stop_circle" : "play_circle"}</span>
-                          {tts.speakingId === m.ts ? "Stop" : "Listen"}
+                          {tts.speakingId === m.ts ? tr("Stop") : tr("Listen")}
                         </button>
                       )}
                       <button
                         className="text-[10px] font-mono text-text3 hover:text-primary flex items-center gap-0.5 cursor-pointer"
                         onClick={() => navigator.clipboard?.writeText(visibleText(m.content))}
                       >
-                        <span className="material-symbols-outlined text-[14px]">content_copy</span>Copy
-                      </button>
+                        <span className="material-symbols-outlined text-[14px]">content_copy</span>{tr("Copy")}</button>
                       {state.categories
                         .filter(c => visibleText(m.content).toLowerCase().includes(c.label.toLowerCase()))
                         .map(c => {
@@ -502,8 +501,7 @@ export default function DanteAI() {
                               className="px-1.5 py-0.5 border text-[9px] font-mono font-bold cursor-pointer hover:brightness-110"
                               style={{ borderColor: color, color }}
                               onClick={() => updateState({ filterCat: c.id, view: "tasks" })}
-                            >
-                              View {c.label}
+                            >{tr("View ")}{c.label}
                             </button>
                           );
                         })}
@@ -528,7 +526,7 @@ export default function DanteAI() {
           <div className="flex gap-2.5 max-w-[85%]">
             <DanteOrb size={28} className="mt-1" />
             <div className="px-4 py-3 bg-surface-container-low rounded-2xl rounded-tl-md flex gap-1 items-center">
-              <span className="font-mono text-[10px] text-primary mr-1.5">Thinking</span>
+              <span className="font-mono text-[10px] text-primary mr-1.5">{tr("Thinking")}</span>
               {[0, 0.15, 0.3].map(d => (
                 <motion.div key={d} animate={shouldReduce ? {} : { y: [0, -4, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: d }} className="w-1.5 h-1.5 rounded-full bg-primary" />
               ))}
@@ -540,13 +538,11 @@ export default function DanteAI() {
         {error && (
           <div className="self-stretch p-3 border border-red/50 bg-red/10 text-[12px] flex flex-wrap items-center gap-2" role="alert">
             <span className="material-symbols-outlined text-[16px] text-red">error</span>
-            <span className="flex-1 min-w-[200px]">{error}</span>
+            <span className="flex-1 min-w-[200px]">{tr(error)}</span>
             {lastFailedQuery && (
-              <button className="px-2.5 py-1 border border-primary text-primary font-mono text-[10px] font-bold rounded-xl cursor-pointer hover:bg-primary-dim" onClick={() => send(lastFailedQuery)}>
-                Retry
-              </button>
+              <button className="px-2.5 py-1 border border-primary text-primary font-mono text-[10px] font-bold rounded-xl cursor-pointer hover:bg-primary-dim" onClick={() => send(lastFailedQuery)}>{tr("Retry")}</button>
             )}
-            <button className="text-text3 hover:text-text cursor-pointer" onClick={() => setError(null)} aria-label="Dismiss error">
+            <button className="text-text3 hover:text-text cursor-pointer" onClick={() => setError(null)} aria-label={tr("Dismiss error")}>
               <span className="material-symbols-outlined text-[16px]">close</span>
             </button>
           </div>
@@ -572,7 +568,7 @@ export default function DanteAI() {
         <div className="mx-3 mb-1 px-3 py-1.5 text-[11px] border border-red/40 bg-red/10 flex items-center gap-2" role="alert">
           <span className="material-symbols-outlined text-[14px] text-red">mic_off</span>
           <span className="flex-1">{speech.error}</span>
-          <button className="cursor-pointer text-text3" onClick={() => speech.setError(null)} aria-label="Dismiss">
+          <button className="cursor-pointer text-text3" onClick={() => speech.setError(null)} aria-label={tr("Dismiss")}>
             <span className="material-symbols-outlined text-[14px]">close</span>
           </button>
         </div>
@@ -584,9 +580,9 @@ export default function DanteAI() {
           className={`w-[42px] h-[42px] shrink-0 flex items-center justify-center border rounded-xl cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${speech.listening ? "bg-red text-white border-red" : "bg-surface-high border-border text-text3 hover:text-primary"}`}
           onClick={toggleMic}
           disabled={!speech.supported}
-          title={!speech.supported ? "Voice input isn't supported in this browser (try Chrome, Edge or Safari)" : speech.listening ? "Stop listening" : `Speak (${VOICE_LANGS.find(l => l.code === voiceLang)?.label})`}
+          title={!speech.supported ? tr("Voice input isn't supported in this browser (try Chrome, Edge or Safari)") : speech.listening ? tr("Stop listening") : tr("Speak ({{0}})",VOICE_LANGS.find(l => l.code === voiceLang)?.label)}
           aria-pressed={speech.listening}
-          aria-label={speech.listening ? "Stop listening" : "Start voice input"}
+          aria-label={speech.listening ? tr("Stop listening") : tr("Start voice input")}
         >
           {speech.listening ? (
             <div className="flex items-center gap-[2px]">
@@ -612,26 +608,24 @@ export default function DanteAI() {
               send(input);
             }
           }}
-          placeholder={speech.listening ? "Listening… speak now" : handsFree ? "Conversation mode is on — just talk" : "Ask Dante anything…"}
-          aria-label="Message Dante"
+          placeholder={speech.listening ? tr("Listening… speak now") : handsFree ? tr("Conversation mode is on — just talk") : tr("Ask Dante anything…")}
+          aria-label={tr("Message Dante")}
         />
 
         {loading ? (
           <button
             className="h-[44px] px-4 bg-surface-high border border-primary text-primary font-mono text-[11px] font-bold flex items-center gap-1 rounded-xl cursor-pointer"
             onClick={stopGenerating}
-            title="Stop (Esc)"
+            title={tr("Stop (Esc)")}
           >
-            <span className="material-symbols-outlined text-[16px]">stop</span>Stop
-          </button>
+            <span className="material-symbols-outlined text-[16px]">stop</span>{tr("Stop")}</button>
         ) : (
           <button
             className="bg-primary text-[#2c1600] h-[44px] px-4 font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed rounded-xl"
             onClick={() => send(input)}
             disabled={!canSend}
           >
-            <span className="material-symbols-outlined text-[16px]">send</span>Send
-          </button>
+            <span className="material-symbols-outlined text-[16px]">send</span>{tr("Send")}</button>
         )}
       </div>
     </div>

@@ -1,3 +1,4 @@
+import {tr,useUiLanguage,uiLocale,speechLocale,quantity} from '../i18n';
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -19,6 +20,7 @@ const WEATHER: [number, number, string, string][] = [
 const weatherOf = (code: number): [number, number, string, string] => WEATHER.find(([a, b]) => code >= a && code <= b) || [0, 0, 'cloud', 'Cloudy'];
 
 export default function MorningBriefing() {
+  useUiLanguage();
   const { state, user, showBriefing, setShowBriefing, isOffline, googleEvents } = useZenos();
   const navigate = useNavigate();
   const reduce = useReducedMotion();
@@ -55,7 +57,8 @@ export default function MorningBriefing() {
     try { ttsOn = JSON.parse(localStorage.getItem('zenos_tts_on') || 'false'); } catch { /* ignore */ }
     if (!ttsOn) return;
     const t = setTimeout(() => {
-      const u = new SpeechSynthesisUtterance(`Good morning${firstName ? ` ${firstName}` : ''}. You have ${dueToday.length} tasks due today and ${meetings.length} meetings.`);
+      const u = new SpeechSynthesisUtterance(tr('Good morning{{0}}. You have {{1}} due today and {{2}}.',firstName?' '+firstName:'',quantity(dueToday.length,'task'),quantity(meetings.length,'meeting')));
+      u.lang=speechLocale();
       window.speechSynthesis.speak(u);
     }, 500);
     return () => { clearTimeout(t); window.speechSynthesis.cancel(); };
@@ -70,7 +73,7 @@ export default function MorningBriefing() {
   };
   const planWithDante = () => {
     close();
-    navigate('/dante', { state: { prompt: 'Plan my day: look at my tasks and meetings for today and suggest an order with times. Mention anything overdue first.' } });
+    navigate('/dante', { state: { prompt: tr("Plan my day: look at my tasks and meetings for today and suggest an order with times. Mention anything overdue first.") } });
   };
 
   const [, , wIcon, wLabel] = weather ? weatherOf(weather.weathercode) : [0, 0, '', ''];
@@ -89,7 +92,7 @@ export default function MorningBriefing() {
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label="Morning briefing"
+            aria-label={tr("Morning briefing")}
             initial={reduce ? false : { opacity: 0, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={reduce ? undefined : { opacity: 0, y: 16 }}
@@ -100,48 +103,46 @@ export default function MorningBriefing() {
             <div className="relative overflow-hidden px-6 sm:px-8 pt-8 pb-6 bg-gradient-to-br from-[#eef0ff] via-[#f4ecff] to-[#e6f7fb] dark:from-[#1a1b38] dark:via-[#1f1838] dark:to-[#10262e]">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="text-[13px] text-on-surface-variant font-medium">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-                  <h2 className="text-[28px] sm:text-[32px] leading-10 font-semibold tracking-tight text-on-surface mt-1">{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}{firstName ? `, ${firstName}` : ''}.</h2>
-                  <p className="text-on-surface-variant mt-1">Here is your day at a glance.</p>
+                  <div className="text-[13px] text-on-surface-variant font-medium">{new Date().toLocaleDateString(uiLocale(), { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                  <h2 className="text-[28px] sm:text-[32px] leading-10 font-semibold tracking-tight text-on-surface mt-1">{new Date().getHours() < 12 ? tr("Good morning") : new Date().getHours() < 18 ? tr("Good afternoon") : tr("Good evening")}{firstName ? `, ${firstName}` : ''}.</h2>
+                  <p className="text-on-surface-variant mt-1">{tr("Here is your day at a glance.")}</p>
                 </div>
                 <DanteOrb size={64} state="speaking" />
               </div>
               <div className="flex flex-wrap gap-2 mt-5">
                 {weather && (
                   <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest/80 text-[13px] text-on-surface shadow-soft">
-                    <Icon name={wIcon} className="text-[18px] text-warning" />{Math.round(weather.temperature)}°C · {wLabel}
+                    <Icon name={wIcon} className="text-[18px] text-warning" />{Math.round(weather.temperature)}{tr("°C · ")}{tr(wLabel)}
                   </span>
                 )}
                 <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest/80 text-[13px] text-on-surface shadow-soft">
-                  <Icon name="local_fire_department" className="text-[18px] text-warning" />{streak}-day streak
-                </span>
+                  <Icon name="local_fire_department" className="text-[18px] text-warning" />{streak}{tr("-day streak")}</span>
                 <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-lowest/80 text-[13px] text-on-surface shadow-soft">
-                  <Icon name="task_alt" className="text-[18px] text-primary" />{open.length} open tasks
-                </span>
+                  <Icon name="task_alt" className="text-[18px] text-primary" />{open.length}{tr(" open tasks")}</span>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-6 sm:p-8">
               <section>
-                <h3 className="text-[13px] font-semibold text-on-surface-variant mb-2">Tasks for today</h3>
+                <h3 className="text-[13px] font-semibold text-on-surface-variant mb-2">{tr("Tasks for today")}</h3>
                 {tasksToShow.length === 0 ? (
-                  <p className="text-[13px] text-on-surface-variant">Nothing due today. A good day to get ahead.</p>
+                  <p className="text-[13px] text-on-surface-variant">{tr("Nothing due today. A good day to get ahead.")}</p>
                 ) : (
                   <ul className="flex flex-col gap-1.5">
                     {tasksToShow.map(t => (
                       <li key={String(t.id)} className="flex items-center gap-2 text-[14px]">
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.date < todayStr ? 'bg-error' : 'bg-warning'}`} />
                         <span className="truncate text-on-surface">{t.title}</span>
-                        {t.date < todayStr && <span className="text-[11px] text-error font-medium shrink-0">overdue</span>}
+                        {t.date < todayStr && <span className="text-[11px] text-error font-medium shrink-0">{tr("overdue")}</span>}
                       </li>
                     ))}
                   </ul>
                 )}
               </section>
               <section>
-                <h3 className="text-[13px] font-semibold text-on-surface-variant mb-2">Meetings</h3>
+                <h3 className="text-[13px] font-semibold text-on-surface-variant mb-2">{tr("Meetings")}</h3>
                 {meetings.length === 0 ? (
-                  <p className="text-[13px] text-on-surface-variant">No meetings. Plenty of focus time.</p>
+                  <p className="text-[13px] text-on-surface-variant">{tr("No meetings. Plenty of focus time.")}</p>
                 ) : (
                   <ul className="flex flex-col gap-1.5">
                     {meetings.slice(0, 5).map(m => (
@@ -156,8 +157,8 @@ export default function MorningBriefing() {
             </div>
 
             <div className="flex flex-col-reverse sm:flex-row gap-2 justify-end px-6 sm:px-8 pb-6 sm:pb-8">
-              <button className={btn.secondary} onClick={planWithDante}><Icon name="auto_awesome" className="text-[18px] text-primary" />Plan my day with Dante</button>
-              <button className={`${btn.solid} px-6`} onClick={close} autoFocus>Start my day</button>
+              <button className={btn.secondary} onClick={planWithDante}><Icon name="auto_awesome" className="text-[18px] text-primary" />{tr("Plan my day with Dante")}</button>
+              <button className={`${btn.solid} px-6`} onClick={close} autoFocus>{tr("Start my day")}</button>
             </div>
           </motion.div>
         </motion.div>

@@ -1,9 +1,11 @@
+import {tr,useUiLanguage} from '../i18n';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useZenos } from "../context/ZenosContext";
 import type { SpaceSnapshot } from "../../shared/space";
 import { spaceBridgeData, spaceSrcdoc } from "../lib/spaceSandbox";
 import { btn } from "./ui/kit";
 export default function SpaceFrame({ snapshot, widgetSize, publicPreview = false }: { snapshot: SpaceSnapshot; widgetSize?: "small" | "medium"; publicPreview?: boolean }) {
+  useUiLanguage();
   const { state, stateRef, googleEvents, user, checkSpaceAccess } = useZenos();
   const events = useRef(googleEvents);
   events.current = googleEvents;
@@ -148,32 +150,27 @@ export default function SpaceFrame({ snapshot, widgetSize, publicPreview = false
     ]);
   };
   return (
-    <section className="space-y-2 min-w-0" aria-label="Sandboxed page preview">
+    <section className="space-y-2 min-w-0" aria-label={tr("Sandboxed page preview")}>
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-semibold">Preview</h2>
+        <h2 className="font-semibold">{tr("Preview")}</h2>
         <button
           className={btn.secondary}
           onClick={() => {
             close();
             setReload((value) => value + 1);
           }}
-        >
-          Reload preview
-        </button>
+        >{tr("Reload preview")}</button>
       </div>
       {blocked ? (
         <p
           role="alert"
           className="p-5 rounded-xl bg-error-container text-error"
-        >
-          The preview could not verify its sandbox session or navigated away.
-          Reload it to continue.
-        </p>
+        >{tr("The preview could not verify its sandbox session or navigated away. Reload it to continue.")}</p>
       ) : (
         <iframe
           key={token}
           ref={frame}
-          title={`My Space preview: ${snapshot.page.title}`}
+          title={tr("My Space preview: {{0}}",snapshot.page.title)}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           allow="camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; payment 'none'; fullscreen 'none'"
@@ -183,7 +180,7 @@ export default function SpaceFrame({ snapshot, widgetSize, publicPreview = false
         />
       )}
       <p className="text-xs text-on-surface-variant">
-        {publicPreview ? "Public sandbox · No app, account, token or workspace data access." : "Private sandbox · No app, account or token access. Data access is off unless you grant it in the page editor."}
+        {publicPreview ? tr("Public sandbox · No app, account, token or workspace data access.") : tr("Private sandbox · No app, account or token access. Data access is off unless you grant it in the page editor.")}
       </p>
     </section>
   );

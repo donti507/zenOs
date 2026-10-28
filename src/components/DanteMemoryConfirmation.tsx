@@ -1,3 +1,4 @@
+import {tr,useUiLanguage} from '../i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DanteMemory } from '../../shared/danteMemory';
 import { Modal, btn } from './ui/kit';
@@ -16,12 +17,12 @@ export function useDanteMemoryConfirmation(ownerId: string | null) {
     return new Promise(resolve => { pending.current = { owner: owner.current!, resolve }; setFact(memory); });
   }, []);
   const visible = pending.current?.owner === ownerId ? fact : null;
-  const dialog = <div key={ownerId ?? 'signed-out'} className="relative z-[100]"><Modal open={!!visible} onClose={() => finish(false)} title="Forget this fact?" footer={<>
-    <button className={btn.secondary} onClick={() => finish(false)}>Cancel</button>
-    <button className={btn.danger} onClick={() => finish(true)}>Forget fact</button>
+  const dialog = <div key={ownerId ?? 'signed-out'} className="relative z-[100]"><Modal open={!!visible} onClose={() => finish(false)} title={tr("Forget this fact?")} footer={<>
+    <button className={btn.secondary} onClick={() => finish(false)}>{tr("Cancel")}</button>
+    <button className={btn.danger} onClick={() => finish(true)}>{tr("Forget fact")}</button>
   </>}>
     <p className="text-on-surface break-words [overflow-wrap:anywhere]">{visible?.fact}</p>
-    <p className="text-on-surface-variant">Dante will stop using this saved fact in future conversations. Existing chat messages stay in your history.</p>
+    <p className="text-on-surface-variant">{tr("Dante will stop using this saved fact in future conversations. Existing chat messages stay in your history.")}</p>
   </Modal></div>;
   return { confirmForgetFact, dialog };
 }

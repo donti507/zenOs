@@ -1,3 +1,4 @@
+import {tr,useUiLanguage} from '../i18n';
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useZenos } from "../context/ZenosContext";
@@ -17,6 +18,7 @@ const labels: Record<SearchType, string> = {
   lecture: "Lecture summary",
 };
 export default function Search() {
+  useUiLanguage();
   const {
     state,
     user,
@@ -136,14 +138,14 @@ export default function Search() {
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
-        title="Search"
-        subtitle={state.workspaceId?"Find notes in the current shared workspace.":"Find ideas across task notes, meeting notes, vault items and lecture summaries."}
+        title={tr("Search")}
+        subtitle={state.workspaceId?tr("Find notes in the current shared workspace."):tr("Find ideas across task notes, meeting notes, vault items and lecture summaries.")}
       />
       <section className={`${card} p-5 space-y-4`}>
         <p className="text-sm text-on-surface-variant">
-          {state.workspaceId?"Text search covers this workspace’s loaded task notes, meeting notes and vault items. Personal notes are kept separate.":isOffline
-            ? "Local text search searches this browser’s saved notes. Sign in to use semantic search."
-            : "Search by meaning, such as “what did Alex say about the launch?” Notes are sent to your configured embedding provider when indexed. Indexing and searches use your daily Dante message allowance."}
+          {state.workspaceId?tr("Text search covers this workspace’s loaded task notes, meeting notes and vault items. Personal notes are kept separate."):isOffline
+            ? tr("Local text search searches this browser’s saved notes. Sign in to use semantic search.")
+            : tr("Search by meaning, such as “what did Alex say about the launch?” Notes are sent to your configured embedding provider when indexed. Indexing and searches use your daily Dante message allowance.")}
         </p>
         <form
           className="flex flex-col sm:flex-row gap-3"
@@ -153,12 +155,12 @@ export default function Search() {
           }}
         >
           <label className="flex-1 min-w-0">
-            <span className="sr-only">Search your notes</span>
+            <span className="sr-only">{tr("Search your notes")}</span>
             <input
               className={input}
               value={query}
               maxLength={500}
-              placeholder="What did Alex say about the launch?"
+              placeholder={tr("What did Alex say about the launch?")}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
@@ -167,18 +169,14 @@ export default function Search() {
             disabled={busy || indexing || !query.trim() || !searchEnabled}
           >
             {busy
-              ? "Searching…"
+              ? tr("Searching…")
               : isOffline
-                ? "Search locally"
-                : "Search notes"}
+                ? tr("Search locally")
+                : tr("Search notes")}
           </button>
         </form>
         {!isOffline && !searchEnabled && (
-          <p role="status" className="text-sm text-on-surface-variant">
-            Semantic search needs the embedding provider, Supabase service
-            credentials and the latest pgvector migration configured on the
-            server.
-          </p>
+          <p role="status" className="text-sm text-on-surface-variant">{tr("Semantic search needs the embedding provider, Supabase service credentials and the latest pgvector migration configured on the server.")}</p>
         )}
         {!isOffline && !state.workspaceId && searchEnabled && (
           <div className="flex flex-wrap items-center gap-3">
@@ -187,34 +185,33 @@ export default function Search() {
               disabled={busy || indexing}
               onClick={() => void index()}
             >
-              {indexing ? "Indexing…" : "Index pending notes"}
+              {indexing ? tr("Indexing…") : tr("Index pending notes")}
             </button>
             <span className="text-xs text-on-surface-variant">
               {searchIndexPending > 0
-                ? `${searchIndexPending} note sections still pending. Each click indexes up to 16.`
-                : "Saved changes are queued automatically for indexing."}
+                ? tr("{{0}} note sections still pending. Each click indexes up to 16.",searchIndexPending)
+                : tr("Saved changes are queued automatically for indexing.")}
             </span>
           </div>
         )}
         {searchIndexError && (
-          <p className="text-sm text-on-surface-variant">
-            Automatic indexing paused: {searchIndexError}
+          <p className="text-sm text-on-surface-variant">{tr("Automatic indexing paused: ")}{tr(searchIndexError)}
           </p>
         )}
         {busy && (
           <p role="status" className="text-sm text-primary">
-            {type && id ? "Opening source…" : "Searching your notes…"}
+            {type && id ? tr("Opening source…") : tr("Searching your notes…")}
           </p>
         )}
         {error && (
           <p role="alert" className="text-sm text-error break-words">
-            {error}
+            {tr(error)}
           </p>
         )}
       </section>
       {!isOffline && <DanteUsageNotice />}
       {source && (
-        <article className={`${card} p-5 space-y-4`} aria-label="Search source">
+        <article className={`${card} p-5 space-y-4`} aria-label={tr("Search source")}>
           <p className="text-xs uppercase text-primary">
             {labels[source.sourceType]}
           </p>
@@ -235,9 +232,7 @@ export default function Search() {
                 );
                 setShowModal("editTask");
               }}
-            >
-              Open task
-            </button>
+            >{tr("Open task")}</button>
           ) : (
             <Link
               className={btn.secondary}
@@ -248,30 +243,29 @@ export default function Search() {
                     ? "/vault"
                     : `/lectures?id=${encodeURIComponent(source.sourceId)}`
               }
-            >
-              Open{" "}
+            >{tr("Open")}{" "}
               {source.sourceType === "meeting"
-                ? "Meetings"
+                ? tr("Meetings")
                 : source.sourceType === "vault"
-                  ? "Vault"
-                  : "Lectures"}
+                  ? tr("Vault")
+                  : tr("Lectures")}
             </Link>
           )}
         </article>
       )}
       {response && (
-        <section aria-label="Search results" className="space-y-3">
+        <section aria-label={tr("Search results")} className="space-y-3">
           <p role="status" className="text-sm text-on-surface-variant">
             {response.results.length}{" "}
             {response.mode === "text"
               ? response.results.length === 1
-                ? "text match"
-                : "text matches"
+                ? tr("text match")
+                : tr("text matches")
               : response.results.length === 1
                 ? "source"
                 : "sources"}
             {response.pending > 0
-              ? ` · ${response.pending} sections still need indexing; these results may be incomplete.`
+              ? tr(" · {{0}} sections still need indexing; these results may be incomplete.",response.pending)
               : ""}
           </p>
           {response.results.map((row, i) => (
@@ -279,8 +273,7 @@ export default function Search() {
               key={`${row.sourceType}:${row.sourceId}`}
               className={`${card} p-5 space-y-2`}
             >
-              <p className="text-xs text-primary">
-                [S{i + 1}] {labels[row.sourceType]}
+              <p className="text-xs text-primary">{tr("[S")}{i + 1}] {labels[row.sourceType]}
               </p>
               <Link
                 className="block font-semibold text-on-surface hover:text-primary break-words [overflow-wrap:anywhere] underline underline-offset-4"
@@ -296,11 +289,11 @@ export default function Search() {
           {!response.results.length && (
             <EmptyState
               icon="search"
-              title="No matching notes"
+              title={tr("No matching notes")}
               text={
                 response.pending
-                  ? "Index the remaining notes, then try searching again."
-                  : "Try another phrase, a person’s name or a more specific topic."
+                  ? tr("Index the remaining notes, then try searching again.")
+                  : tr("Try another phrase, a person’s name or a more specific topic.")
               }
             />
           )}
@@ -309,8 +302,8 @@ export default function Search() {
       {!response && !source && !busy && (
         <EmptyState
           icon="search"
-          title="Your notes, connected"
-          text="Search for a topic or a question. Results include the saved source so you can check the context."
+          title={tr("Your notes, connected")}
+          text={tr("Search for a topic or a question. Results include the saved source so you can check the context.")}
         />
       )}
     </div>
