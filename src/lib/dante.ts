@@ -57,8 +57,9 @@ export function buildDanteContext(state: ZenosState, googleEvents: any[], userNa
   const done = tasks.filter(t => t.status === 'done');
   return {
     mode,
+    workspaceId:state.workspaceId||null,
     localSearchSources: localMode ? localSearchSources(state).slice(0,100).map(row=>({...row,content:row.content.slice(0,2400)})) : undefined,
-    memory: recentMemory(state.danteMemory),
+    memory: state.workspaceId?[]:recentMemory(state.danteMemory),
     userName,
     language,
     now: {
@@ -72,10 +73,10 @@ export function buildDanteContext(state: ZenosState, googleEvents: any[], userNa
       id: t.id, title: t.title, status: t.status, date: t.date, cat: t.cat, progress: t.progress, note: t.note, repeat: t.recurrence || 'none', reminder: t.reminder,
     })),
     meetings: (state.meetings || []).filter(m => m.status !== 'completed' || m.date >= todayStr).map(m => ({
-      id: m.id, personName: m.personName, date: m.date, time: m.time, subject: m.subject, status: m.status,
+      id: m.id, personName: m.personName, date: m.date, time: m.time, subject: m.subject, status: m.status,notes:m.notes,
     })),
-    googleEvents: googleEvents.map(e => ({ summary: e.summary, start: e.start, end: e.end })),
-    vault: state.vault.map(v => ({ name: v.name, url: v.url })),
+    googleEvents: (state.workspaceId?[]:googleEvents).map(e => ({ summary: e.summary, start: e.start, end: e.end })),
+    vault: state.vault.map(v => ({ name: v.name, url: v.url,detail:v.detail })),
     categories: state.categories.map(c => ({ id: c.id, label: c.label })),
     stats: {
       streak: computeStreak(state.completionLog),

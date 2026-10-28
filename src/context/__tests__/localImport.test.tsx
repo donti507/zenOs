@@ -17,7 +17,7 @@ vi.mock('../../lib/supabase', () => ({
     },
     from: (table: string) => {
       const result = { data: table === 'categories' ? [{ id: 'cloud-category', label: 'Work' }] : [], error: null };
-      const chain: any = { select: () => chain, order: () => chain, limit: () => chain, then: (resolve: any) => Promise.resolve(result).then(resolve) };
+      const chain: any = { select: () => chain,is:()=>chain,eq:()=>chain, order: () => chain, limit: () => chain, then: (resolve: any) => Promise.resolve(result).then(resolve) };
       return chain;
     },
     rpc: mocks.rpc,

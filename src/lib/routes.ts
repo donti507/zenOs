@@ -1,5 +1,6 @@
 /** One place that maps the app's views to URLs. */
 export const ROUTES = [
+  { view:'workspaces',path:'/workspaces',label:'Workspaces',icon:'group' },
   { view: 'dashboard', path: '/', label: 'Home', icon: 'home' },
   { view: 'tasks', path: '/tasks', label: 'All tasks', icon: 'checklist' },
   { view: 'kanban', path: '/board', label: 'Board', icon: 'view_kanban' },

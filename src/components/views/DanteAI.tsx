@@ -89,6 +89,8 @@ export default function DanteAI() {
   useEffect(() => savePref("zenos_tts_on", ttsOn), [ttsOn]);
 
   const abortRef = useRef<AbortController | null>(null);
+  const alive=useRef(true);
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;abortRef.current?.abort();};},[]);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const handsFreeRef = useRef(handsFree);
@@ -119,6 +121,8 @@ export default function DanteAI() {
 
   // ---------- sending ----------
   const send = async (raw: string) => {
+    const workspace=stateRef.current.workspaceId,epoch=stateRef.current.workspaceEpoch;
+    const current=()=>alive.current&&stateRef.current.workspaceId===workspace&&stateRef.current.workspaceEpoch===epoch;
     const query = raw.trim();
     if (!query || loading) return;
 
@@ -142,18 +146,21 @@ export default function DanteAI() {
       .slice(-HISTORY_TO_SEND)
       .map(m => ({ role: m.role, content: m.role === "assistant" ? visibleText(m.content) || "(done)" : m.content }));
 
+    if(!current())return;
     const controller = new AbortController();
     abortRef.current = controller;
 
     let full = "";
     try {
       const token = await getAuthToken();
+      if(!current())return;
       full = await streamDante({
         messages,
         context: buildDanteContext(stateRef.current, googleEvents, userName, voiceLang, 'chat', isOffline),
         token,
         signal: controller.signal,
         onText: t => {
+          if(!current())return;
           full = t;
           setStreaming(t);
         },
@@ -173,6 +180,7 @@ export default function DanteAI() {
       // Stopped by the user: keep whatever arrived so far
     }
 
+    if(!current())return;
     abortRef.current = null;
     setStreaming("");
     setLoading(false);
@@ -186,7 +194,7 @@ export default function DanteAI() {
     }
 
     const saved = await saveDanteMessage("assistant", full);
-    if (!controller.signal.aborted) await runActions(saved);
+    if (current() && !controller.signal.aborted) await runActions(saved);
 
     if (ttsOn || handsFreeRef.current) {
       await tts.speak(toSpeech(full), saved.ts);

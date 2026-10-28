@@ -8,6 +8,7 @@ const clip = (v: unknown, n = 200) => (typeof v === 'string' ? v.slice(0, n) : v
 const arr = (v: unknown, n: number): any[] => (Array.isArray(v) ? v.slice(0, n) : []);
 
 export interface DanteContext {
+  workspaceId?: string | null;
   userName?: string;
   now?: { date?: string; time?: string; weekday?: string; timezone?: string };
   language?: string;
@@ -33,18 +34,19 @@ export function buildSystemPrompt(ctx: DanteContext = {}): string {
     .join('\n') || '(no tasks)';
 
   const meetings = arr(ctx.meetings, MAX_ITEMS)
-    .map(m => `- [${clip(m.id, 64)}] ${clip(m.date, 10)} ${clip(m.time, 5)} with ${clip(m.personName, 60)}: "${clip(m.subject, 120)}" (${clip(m.status, 12)})`)
+    .map(m => `- [${clip(m.id, 64)}] ${clip(m.date, 10)} ${clip(m.time, 5)} with ${clip(m.personName, 60)}: "${clip(m.subject, 120)}" (${clip(m.status, 12)})${m.notes?` | notes: ${clip(m.notes,1200)}`:''}`)
     .join('\n') || '(none)';
 
   const events = arr(ctx.googleEvents, MAX_ITEMS)
     .map(e => `- ${clip(e.start?.dateTime || e.start?.date, 25)} → ${clip(e.end?.dateTime || e.end?.date, 25)}: ${clip(e.summary, 120)}`)
     .join('\n') || '(none or not connected)';
 
-  const vault = arr(ctx.vault, MAX_ITEMS).map(v => `- ${clip(v.name, 80)}${v.url ? ` (${clip(v.url, 120)})` : ''}`).join('\n') || '(empty)';
+  const vault = arr(ctx.vault, MAX_ITEMS).map(v => `- ${clip(v.name, 80)}${v.url ? ` (${clip(v.url, 120)})` : ''}${v.detail?` | ${clip(v.detail,600)}`:''}`).join('\n') || '(empty)';
 
   const s = ctx.stats || {};
 
   return `You are Dante, the personal AI chief of staff inside the ZEN OS productivity app.
+${ctx.workspaceId?'Workspace: shared. Use ONLY the workspace data below. Personal memory, Google Calendar, lectures and My Space are unavailable here. Never emit remember, forget or edit_space_page actions.':'Workspace: personal.'}
 User: ${clip(ctx.userName, 60) || 'unknown'}
 Now: ${clip(now.weekday, 12)} ${clip(now.date, 10)} ${clip(now.time, 5)} (${clip(now.timezone, 40) || 'local time'})
 

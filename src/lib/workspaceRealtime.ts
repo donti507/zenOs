@@ -49,7 +49,7 @@ export function readWorkspaceChange(message: unknown, userId: string): Workspace
   const payload = (message as any)?.payload;
   if (payload?.schema !== 'public' || !WORKSPACE_TABLES.includes(payload.table) || !['INSERT', 'UPDATE', 'DELETE'].includes(payload.operation)) return null;
   const row = payload.operation === 'DELETE' ? payload.old_record : payload.record;
-  if (!row || row.user_id !== userId || !['string', 'number'].includes(typeof row.id) || String(row.id) === '') return null;
+  if (!row || row.workspace_id != null || row.user_id !== userId || !['string', 'number'].includes(typeof row.id) || String(row.id) === '') return null;
   return { table: payload.table, operation: payload.operation, row };
 }
 

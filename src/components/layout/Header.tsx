@@ -1,3 +1,4 @@
+import WorkspaceSwitcher from '../WorkspaceSwitcher';
 import AccountControls from '../AccountControls';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -82,8 +83,9 @@ export default function Header({ sidebarCollapsed }: { sidebarCollapsed: boolean
     <header
       className={`fixed top-0 right-0 left-0 ${sidebarCollapsed ? 'md:left-[72px]' : 'md:left-60'} h-16 bg-surface-container-lowest/80 backdrop-blur-xl z-40 flex items-center justify-between gap-3 px-4 md:px-6 shadow-soft transition-[left] duration-200`}
     >
+      <div className="md:hidden min-w-0"><WorkspaceSwitcher compact /></div>
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1 min-w-0">
+      <div className="hidden md:flex items-center gap-1 min-w-0">
         <span className="md:hidden w-7 h-7 rounded-lg bg-[conic-gradient(from_200deg,#5b5fef,#8b5cf6,#06b6d4,#5b5fef)] mr-1 shrink-0" aria-hidden="true" />
         <span className="hidden sm:inline font-medium text-on-surface-variant">{route.label}</span>
         <span className="hidden sm:inline-flex"><span className="material-symbols-outlined text-[14px] text-outline">chevron_right</span></span>

@@ -137,11 +137,11 @@ export default function Search() {
     <div className="min-w-0 space-y-5">
       <PageHeader
         title="Search"
-        subtitle="Find ideas across task notes, meeting notes, vault items and lecture summaries."
+        subtitle={state.workspaceId?"Find notes in the current shared workspace.":"Find ideas across task notes, meeting notes, vault items and lecture summaries."}
       />
       <section className={`${card} p-5 space-y-4`}>
         <p className="text-sm text-on-surface-variant">
-          {isOffline
+          {state.workspaceId?"Text search covers this workspace’s loaded task notes, meeting notes and vault items. Personal notes are kept separate.":isOffline
             ? "Local text search searches this browser’s saved notes. Sign in to use semantic search."
             : "Search by meaning, such as “what did Alex say about the launch?” Notes are sent to your configured embedding provider when indexed. Indexing and searches use your daily Dante message allowance."}
         </p>
@@ -180,7 +180,7 @@ export default function Search() {
             server.
           </p>
         )}
-        {!isOffline && searchEnabled && (
+        {!isOffline && !state.workspaceId && searchEnabled && (
           <div className="flex flex-wrap items-center gap-3">
             <button
               className={btn.secondary}

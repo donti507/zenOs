@@ -67,14 +67,14 @@ const VOICE_LANGS = [
 
 export default function DanteLive() {
   const {
-    liveOpen, setLiveOpen, stateRef, user, isOffline, googleEvents, getAuthToken, saveDanteMessage,
+    liveOpen, setLiveOpen, stateRef, user, isOffline, activeWorkspaceId, googleEvents, getAuthToken, saveDanteMessage,
     addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
     spacePages, loadSpacePage, editSpacePage,
   } = useZenos();
   const location = useLocation();
-  const pageSlug = spaceVoiceSlug(location.pathname);
+  const pageSlug = activeWorkspaceId?null:spaceVoiceSlug(location.pathname);
   const activePage = (spacePages || []).find(page => page.slug === pageSlug);
-  const voiceScope = useMemo(() => ({pathname: location.pathname, owner: user?.id, isOffline, pageId: activePage?.id}), [location.pathname, location.key, user?.id, isOffline, activePage?.id]);
+  const voiceScope = useMemo(() => ({pathname: location.pathname, owner: user?.id, isOffline, activeWorkspaceId, pageId: activePage?.id}), [location.pathname, location.key, user?.id, isOffline, activeWorkspaceId, activePage?.id]);
   const scopeRef = useRef(voiceScope); scopeRef.current = voiceScope;
   const captureRef = useRef<typeof voiceScope | null>(null);
   const listenTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -236,7 +236,7 @@ export default function DanteLive() {
       setPhase('idle');
       return;
     }
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted || scopeRef.current!==captured || (stateRef.current.workspaceId??null)!==(captured.activeWorkspaceId??null)) return;
 
     speakReady(true);
     speaker.finish();

@@ -34,13 +34,14 @@ export function useSemanticSearch(options: Options) {
   const current = () =>
     latest.current.ownerId === options.ownerId &&
     latest.current.isOffline === options.isOffline &&
+    latest.current.state.workspaceId === options.state.workspaceId &&
     latest.current.isCurrent();
   useEffect(() => {
     let active = true;
     setEnabled(false);
     setPending(0);
     setError(null);
-    if (!options.ownerId || options.isOffline) return;
+    if (!options.ownerId || options.isOffline || options.state.workspaceId) return;
     const abort = new AbortController();
     void fetch("/api/search/status", { signal: abort.signal })
       .then((r) => (r.ok ? r.json() : null))
@@ -52,7 +53,7 @@ export function useSemanticSearch(options: Options) {
       active = false;
       abort.abort();
     };
-  }, [options.ownerId, options.isOffline]);
+  }, [options.ownerId, options.isOffline,options.state.workspaceId]);
   const request = async (
     url: string,
     method: string,
@@ -84,7 +85,7 @@ export function useSemanticSearch(options: Options) {
   };
   const indexNotes = useCallback(
     async (signal?: AbortSignal) => {
-      if (options.isOffline) return { indexed: 0, pending: 0 };
+      if (options.isOffline || options.state.workspaceId) return { indexed: 0, pending: 0 };
       try {
         const result = await request("/api/search/index", "POST", {}, signal);
         if (current()) {
@@ -100,7 +101,7 @@ export function useSemanticSearch(options: Options) {
         throw error;
       }
     },
-    [options.ownerId, options.isOffline, options.getToken],
+    [options.ownerId, options.isOffline, options.getToken,options.state.workspaceId],
   );
   // Include searchable fields only: card review/timer/UI renders never spend quota.
   const fingerprint = JSON.stringify([
@@ -134,10 +135,10 @@ export function useSemanticSearch(options: Options) {
     async (query: string, signal?: AbortSignal): Promise<SearchResponse> => {
       const term = searchQuery(query);
       if (!current()) throw new Error("Your account changed.");
-      if (options.isOffline)
+      if (options.isOffline || options.state.workspaceId)
         return {
           results: textSearch(
-            localSearchSources(options.stateRef.current),
+            localSearchSources(options.stateRef.current.workspaceId?{...options.stateRef.current,lectures:[]}:options.stateRef.current),
             term,
           ),
           pending: 0,
@@ -160,13 +161,13 @@ export function useSemanticSearch(options: Options) {
       }
       return result;
     },
-    [options.ownerId, options.isOffline, options.getToken],
+    [options.ownerId, options.isOffline, options.getToken,options.state.workspaceId],
   );
   const getSearchSource = useCallback(
     async (type: SearchType, id: string, signal?: AbortSignal) => {
       if (!isSearchType(type) || !current()) throw new Error("Invalid source.");
-      if (options.isOffline) {
-        const source = localSearchSources(options.stateRef.current).find(
+      if (options.isOffline || options.state.workspaceId) {
+        const source = localSearchSources(options.stateRef.current.workspaceId?{...options.stateRef.current,lectures:[]}:options.stateRef.current).find(
           (row) => row.sourceType === type && row.sourceId === id,
         );
         if (!source)
@@ -184,10 +185,10 @@ export function useSemanticSearch(options: Options) {
         ),
       );
     },
-    [options.ownerId, options.isOffline, options.getToken],
+    [options.ownerId, options.isOffline, options.getToken,options.state.workspaceId],
   );
   return {
-    searchEnabled: options.isOffline || enabled,
+    searchEnabled: options.isOffline || !!options.state.workspaceId || enabled,
     searchIndexPending: pending,
     searchIndexError: indexError,
     indexNotes,

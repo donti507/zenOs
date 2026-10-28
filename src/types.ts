@@ -57,6 +57,8 @@ export interface Meeting {
 }
 
 export interface ZenosState {
+  workspaceId?: string | null;
+  workspaceEpoch?:number;
   lectures?: import('../shared/lectures').Lecture[];
   danteMemory?: import('../shared/danteMemory').DanteMemory[];
   view: string;

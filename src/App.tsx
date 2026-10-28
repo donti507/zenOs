@@ -1,3 +1,4 @@
+import PersonalSpaceOnly from './components/PersonalSpaceOnly';
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ZenosProvider, useZenos } from './context/ZenosContext';
@@ -12,6 +13,7 @@ const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 
 // Each page is its own chunk and only loads when opened
+const Workspaces=lazy(()=>import('./pages/Workspaces'));
 const Home = lazy(() => import('./pages/Home'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Kanban = lazy(() => import('./pages/Board'));
@@ -29,7 +31,7 @@ const DanteAI = lazy(() => import('./components/views/DanteAI'));
 
 export function AppRoutes() {
   const { pathname, search: routeSearch } = useLocation();
-  const { user, isOffline, isLoadingData, setShowBriefing, passwordRecovery, setPasswordRecovery } = useZenos();
+  const { user, isOffline, activeWorkspaceId, isLoadingData, setShowBriefing, passwordRecovery, setPasswordRecovery } = useZenos();
 
   // Morning briefing once per day between 5:00 and 11:00
   useEffect(() => {
@@ -62,25 +64,26 @@ export function AppRoutes() {
   }
 
   return (
-    <Routes>
+    <div key={`${user.id}:${isOffline}:${activeWorkspaceId||'personal'}`}><Routes>
       <Route element={<AppShell />}>
         <Route index element={<Home />} />
+        <Route path="workspaces" element={<Workspaces />} />
         <Route path="tasks" element={<Tasks />} />
         <Route path="board" element={<Kanban />} />
         <Route path="calendar" element={<Calendar />} />
         <Route path="focus-rooms" element={<FocusRooms key={`${user.id}:${isOffline}:${pathname}`} />} />
         <Route path="focus-rooms/:id" element={<FocusRooms key={`${user.id}:${isOffline}:${pathname}`} />} />
         <Route path="meetings" element={<Meetings />} />
-        <Route path="space" element={<Space />} />
-        <Route path="space/:slug" element={<Space />} />
+        <Route path="space" element={<PersonalSpaceOnly><Space /></PersonalSpaceOnly>} />
+        <Route path="space/:slug" element={<PersonalSpaceOnly><Space /></PersonalSpaceOnly>} />
         <Route path="search" element={<Search />} />
-        <Route path="lectures" element={<Lectures />} />
+        <Route path="lectures" element={<PersonalSpaceOnly><Lectures /></PersonalSpaceOnly>} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="vault" element={<Vault />} />
         <Route path="dante" element={<DanteAI />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
-    </Routes>
+    </Routes></div>
   );
 }
 

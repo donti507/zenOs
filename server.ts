@@ -1,3 +1,4 @@
+import {createWorkspaceContextReader} from './server/workspaces';
 import { createTts } from './server/tts';
 import { createWeeklyRecaps } from './server/weeklyRecaps';
 import { createFocusRooms } from './server/focusRooms';
@@ -128,6 +129,7 @@ async function startServer() {
   // Voice input: browser records audio, server sends it to a Whisper-style model
   app.post('/api/transcribe', requireUser, rateLimit, daily.count('transcriptions'), express.raw({ type: 'audio/*', limit: '15mb' }), transcribe);
 
+  const readWorkspaceContext=createWorkspaceContextReader();
   app.post('/api/dante', requireUser, rateLimit, daily.count('messages'), async (req, res) => {
     const problem = describeConfigProblem(llm);
     if (problem) return res.status(503).json({ error: problem });
@@ -153,8 +155,9 @@ async function startServer() {
     let promptContext;
     let searchResult;
     try {
-      promptContext = await readMemory((req as any).userId, req.headers.authorization, context);
-      searchResult = await runDanteSearch({userId:(req as any).userId,authorization:req.headers.authorization||'',question:history.at(-1)!.content,localSources:context?.localSearchSources,search:semanticSearch,config:llm,signal:abort.signal});
+      const sharedContext=await readWorkspaceContext((req as any).userId,req.headers.authorization,context);
+      promptContext = sharedContext || await readMemory((req as any).userId, req.headers.authorization, context);
+      searchResult = sharedContext?{status:'unavailable',results:[],pending:0}:await runDanteSearch({userId:(req as any).userId,authorization:req.headers.authorization||'',question:history.at(-1)!.content,localSources:context?.localSearchSources,search:semanticSearch,config:llm,signal:abort.signal});
       // Never trust client-supplied retrieval results or tool status.
       promptContext = {...promptContext,search:searchPromptData(searchResult)};
     } catch {
