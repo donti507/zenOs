@@ -1,3 +1,4 @@
+import {createLiveSpeech} from '../lib/liveSpeech';
 import {DANTE_VOICE_PREFS_KEY,loadDanteVoicePreferences,loadDanteVoiceLanguage,pickDanteVoice,type DanteVoicePreferences} from '../lib/danteVoice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -97,6 +98,8 @@ export default function DanteLive() {
   const pausedRef = useRef(paused); pausedRef.current = paused;
   const abortRef = useRef<AbortController | null>(null);
   const ttsRun = useRef(0);
+  const speakerRef = useRef<ReturnType<typeof createLiveSpeech>|null>(null);
+  const [voiceNotice,setVoiceNotice] = useState('');
 
   useEffect(() => { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch { /* ignore */ } }, [prefs]);
   useEffect(() => { try { localStorage.setItem('zenos_voice_lang', JSON.stringify(lang)); } catch { /* ignore */ } }, [lang]);
@@ -142,29 +145,12 @@ export default function DanteLive() {
   };
 
   // ---------- speaking: sentences are spoken while the answer is still streaming ----------
-  const stopSpeaking = () => { ttsRun.current++; if ('speechSynthesis' in window) speechSynthesis.cancel(); };
+  const stopSpeaking = () => { ttsRun.current++; speakerRef.current?.stop(); speakerRef.current=null; if ('speechSynthesis' in window) speechSynthesis.cancel(); };
 
   const makeSpeaker = () => {
-    const run = ++ttsRun.current;
-    let pending = 0;
-    let finished = false;
-    let resolveDone: () => void = () => {};
-    const done = new Promise<void>(r => (resolveDone = r));
-    const check = () => { if (finished && pending === 0) resolveDone(); };
-    const speak = (text: string) => {
-      const clean = text.trim();
-      if (!clean || run !== ttsRun.current || !('speechSynthesis' in window)) return;
-      const u = new SpeechSynthesisUtterance(clean);
-      u.lang = lang;
-      const v = pickVoice();
-      if (v) u.voice = v;
-      u.rate = prefs.rate;
-      pending++;
-      u.onstart = () => run === ttsRun.current && setPhase('speaking');
-      u.onend = u.onerror = () => { pending--; check(); };
-      speechSynthesis.speak(u);
-    };
-    return { speak, done, finish: () => { finished = true; check(); }, isCurrent: () => run === ttsRun.current };
+    speakerRef.current?.stop();const run=++ttsRun.current,captured=scopeRef.current;setVoiceNotice('');
+    const speaker=createLiveSpeech({server:!!status?.tts&&!!user&&!isOffline,getToken:getAuthToken,isCurrent:()=>run===ttsRun.current&&openRef.current&&scopeRef.current===captured,lang,rate:prefs.rate,voice:pickVoice,onStart:()=>setPhase('speaking'),onFallback:setVoiceNotice});
+    speakerRef.current=speaker;return speaker;
   };
 
   // ---------- one turn of conversation ----------
@@ -284,7 +270,7 @@ export default function DanteLive() {
     server.cancel(); browser.cancel();
     setPhase('idle');
     if (liveOpen) {
-      setHeard(''); setReply(''); setResults([]); setError(null); setPaused(false);
+      setHeard(''); setReply(''); setResults([]); setError(null); setPaused(false); setVoiceNotice('');
       scheduleListen(350);
     }
     return () => {
@@ -368,6 +354,7 @@ export default function DanteLive() {
           {showSettings && (
             <div className="relative mx-auto w-full max-w-md px-5">
               <div className="rounded-2xl bg-white/10 backdrop-blur-xl p-4 flex flex-col gap-3 text-[14px]">
+                {status?.tts&&!isOffline&&<p className="text-xs rounded-lg bg-surface-container text-on-surface-variant px-3 py-2">Server voice enabled. Spoken replies are sent to the configured speech provider.</p>}
                 <label className="flex items-center justify-between gap-3">
                   <span className="text-white/70">Language</span>
                   <select value={lang} onChange={e => setLang(e.target.value)} className="bg-white/10 rounded-lg px-2 py-1.5 outline-none">
@@ -375,7 +362,7 @@ export default function DanteLive() {
                   </select>
                 </label>
                 <label className="flex items-center justify-between gap-3">
-                  <span className="text-white/70">Voice</span>
+                  <span className="text-white/70">{status?.tts&&!isOffline?'Browser fallback voice':'Voice'}</span>
                   <select value={prefs.voiceURI} onChange={e => setPrefs({ ...prefs, voiceURI: e.target.value })} className="bg-white/10 rounded-lg px-2 py-1.5 outline-none max-w-[220px]">
                     <option value="" className="text-black">Automatic</option>
                     {langVoices.map(v => <option key={v.voiceURI} value={v.voiceURI} className="text-black">{v.name}</option>)}
@@ -394,6 +381,7 @@ export default function DanteLive() {
           )}
 
           {pageSlug && <p className="relative mx-5 rounded-xl bg-surface-container px-4 py-3 text-sm text-on-surface text-center break-words" role="status">Editing “{pageTitle}” · Voice instructions change this page and save a version.</p>}
+          {voiceNotice&&<p className="relative mx-5 rounded-xl bg-surface-container px-4 py-3 text-sm text-on-surface-variant text-center break-words" role="status">{voiceNotice}</p>}
           {/* Centre: orb + captions */}
           <div className="relative flex-1 flex flex-col items-center justify-center gap-10 px-6">
             <button onClick={tap} className="rounded-full cursor-pointer focus-visible:outline-white" aria-label={label}>

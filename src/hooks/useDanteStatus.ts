@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export type DanteStatus = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean; stt?: boolean };
+export type DanteStatus = { ready: boolean; provider: string; model: string | null; problem: string | null; authRequired: boolean; stt?: boolean; tts?: boolean };
 
 let cache: Promise<DanteStatus | null> | null = null;
 

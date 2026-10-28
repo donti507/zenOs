@@ -1476,3 +1476,28 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.configure_weekly_recaps(uuid,text,boolean),public.generate_weekly_recap(uuid,boolean),public.run_due_weekly_recaps(integer) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.configure_weekly_recaps(uuid,text,boolean),public.generate_weekly_recap(uuid,boolean),public.run_due_weekly_recaps(integer) TO service_role;
+
+-- Server TTS has a separate paid-speech allowance; browser voices need no quota.
+CREATE TABLE IF NOT EXISTS public.tts_usage (
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,date date NOT NULL,
+ requests integer NOT NULL DEFAULT 0 CHECK(requests>=0),PRIMARY KEY(user_id,date)
+);
+ALTER TABLE public.tts_usage ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.tts_usage FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON public.tts_usage TO authenticated;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.tts_usage TO service_role;
+DROP POLICY IF EXISTS tts_usage_own ON public.tts_usage;
+CREATE POLICY tts_usage_own ON public.tts_usage FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+CREATE OR REPLACE FUNCTION public.consume_tts_usage(p_user_id uuid,p_limit integer)
+RETURNS TABLE(allowed boolean,date date,requests integer) LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE today_utc date=(now() AT TIME ZONE 'UTC')::date;saved public.tts_usage%ROWTYPE;
+BEGIN
+ IF p_limit IS NULL OR p_limit<1 THEN RAISE EXCEPTION 'Invalid speech limit'; END IF;
+ INSERT INTO public.tts_usage(user_id,date) VALUES(p_user_id,today_utc) ON CONFLICT ON CONSTRAINT tts_usage_pkey DO NOTHING;
+ SELECT * INTO saved FROM public.tts_usage WHERE user_id=p_user_id AND tts_usage.date=today_utc FOR UPDATE;
+ IF saved.requests>=p_limit THEN RETURN QUERY SELECT false,saved.date,saved.requests;RETURN; END IF;
+ UPDATE public.tts_usage SET requests=tts_usage.requests+1 WHERE user_id=p_user_id AND tts_usage.date=today_utc RETURNING * INTO saved;
+ RETURN QUERY SELECT true,saved.date,saved.requests;
+END $$;
+REVOKE ALL ON FUNCTION public.consume_tts_usage(uuid,integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_tts_usage(uuid,integer) TO service_role;

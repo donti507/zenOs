@@ -1,3 +1,4 @@
+import { createTts } from './server/tts';
 import { createWeeklyRecaps } from './server/weeklyRecaps';
 import { createFocusRooms } from './server/focusRooms';
 import { createChallenges } from './server/challenges';
@@ -49,6 +50,8 @@ async function startServer() {
   app.get('/api/weekly-recaps',requireUser,weeklyRecaps.gate,weeklyRecaps.list);
   app.post('/api/weekly-recaps/settings',requireUser,weeklyRecaps.gate,weeklyRecaps.configure);
   app.post('/api/weekly-recaps/generate',requireUser,weeklyRecaps.gate,rateLimit,weeklyRecaps.generate);
+  const tts=createTts({isPro:billing.isPro});
+  app.post('/api/tts',requireUser,rateLimit,tts.handle);
   const focusRooms=createFocusRooms();
   app.get('/api/focus-rooms',requireUser,focusRooms.gate,focusRooms.list);
   app.post('/api/focus-rooms',requireUser,focusRooms.gate,rateLimit,focusRooms.create);
@@ -116,6 +119,7 @@ async function startServer() {
       problem,
       authRequired: !ALLOW_ANONYMOUS,
       stt: STT_READY,
+      tts: tts.enabled,
     });
   });
 
