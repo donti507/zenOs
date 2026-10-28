@@ -1,3 +1,5 @@
+import {createWorkspaceContextReader} from './server/workspaces';
+import { createTts } from './server/tts';
 import { createWeeklyRecaps } from './server/weeklyRecaps';
 import { createFocusRooms } from './server/focusRooms';
 import { createChallenges } from './server/challenges';
@@ -49,6 +51,8 @@ async function startServer() {
   app.get('/api/weekly-recaps',requireUser,weeklyRecaps.gate,weeklyRecaps.list);
   app.post('/api/weekly-recaps/settings',requireUser,weeklyRecaps.gate,weeklyRecaps.configure);
   app.post('/api/weekly-recaps/generate',requireUser,weeklyRecaps.gate,rateLimit,weeklyRecaps.generate);
+  const tts=createTts({isPro:billing.isPro});
+  app.post('/api/tts',requireUser,rateLimit,tts.handle);
   const focusRooms=createFocusRooms();
   app.get('/api/focus-rooms',requireUser,focusRooms.gate,focusRooms.list);
   app.post('/api/focus-rooms',requireUser,focusRooms.gate,rateLimit,focusRooms.create);
@@ -116,6 +120,7 @@ async function startServer() {
       problem,
       authRequired: !ALLOW_ANONYMOUS,
       stt: STT_READY,
+      tts: tts.enabled,
     });
   });
 
@@ -124,6 +129,7 @@ async function startServer() {
   // Voice input: browser records audio, server sends it to a Whisper-style model
   app.post('/api/transcribe', requireUser, rateLimit, daily.count('transcriptions'), express.raw({ type: 'audio/*', limit: '15mb' }), transcribe);
 
+  const readWorkspaceContext=createWorkspaceContextReader();
   app.post('/api/dante', requireUser, rateLimit, daily.count('messages'), async (req, res) => {
     const problem = describeConfigProblem(llm);
     if (problem) return res.status(503).json({ error: problem });
@@ -149,8 +155,9 @@ async function startServer() {
     let promptContext;
     let searchResult;
     try {
-      promptContext = await readMemory((req as any).userId, req.headers.authorization, context);
-      searchResult = await runDanteSearch({userId:(req as any).userId,authorization:req.headers.authorization||'',question:history.at(-1)!.content,localSources:context?.localSearchSources,search:semanticSearch,config:llm,signal:abort.signal});
+      const sharedContext=await readWorkspaceContext((req as any).userId,req.headers.authorization,context);
+      promptContext = sharedContext || await readMemory((req as any).userId, req.headers.authorization, context);
+      searchResult = sharedContext?{status:'unavailable',results:[],pending:0}:await runDanteSearch({userId:(req as any).userId,authorization:req.headers.authorization||'',question:history.at(-1)!.content,localSources:context?.localSearchSources,search:semanticSearch,config:llm,signal:abort.signal});
       // Never trust client-supplied retrieval results or tool status.
       promptContext = {...promptContext,search:searchPromptData(searchResult)};
     } catch {

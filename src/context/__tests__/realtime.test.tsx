@@ -24,7 +24,7 @@ vi.mock('../../lib/supabase', () => ({ SUPABASE_CONFIGURED: true, supabase: {
   from: (table: string) => {
     let inserted: any;
     const chain: any = {
-      select: () => chain, order: () => chain, limit: () => chain, eq: () => chain,
+      select: () => chain,is:()=>chain, order: () => chain, limit: () => chain, eq: () => chain,
       insert: (data: any) => { inserted=data; return chain; },
       single: async () => {
         const row={id:'created',created_at:'2026-10-27',added_at:'2026-10-27',...inserted}; mock.lastMutation=row;

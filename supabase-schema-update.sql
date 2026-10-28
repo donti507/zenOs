@@ -1476,3 +1476,400 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.configure_weekly_recaps(uuid,text,boolean),public.generate_weekly_recap(uuid,boolean),public.run_due_weekly_recaps(integer) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.configure_weekly_recaps(uuid,text,boolean),public.generate_weekly_recap(uuid,boolean),public.run_due_weekly_recaps(integer) TO service_role;
+
+-- Server TTS has a separate paid-speech allowance; browser voices need no quota.
+CREATE TABLE IF NOT EXISTS public.tts_usage (
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,date date NOT NULL,
+ requests integer NOT NULL DEFAULT 0 CHECK(requests>=0),PRIMARY KEY(user_id,date)
+);
+ALTER TABLE public.tts_usage ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.tts_usage FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON public.tts_usage TO authenticated;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.tts_usage TO service_role;
+DROP POLICY IF EXISTS tts_usage_own ON public.tts_usage;
+CREATE POLICY tts_usage_own ON public.tts_usage FOR ALL TO authenticated USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id);
+CREATE OR REPLACE FUNCTION public.consume_tts_usage(p_user_id uuid,p_limit integer)
+RETURNS TABLE(allowed boolean,date date,requests integer) LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE today_utc date=(now() AT TIME ZONE 'UTC')::date;saved public.tts_usage%ROWTYPE;
+BEGIN
+ IF p_limit IS NULL OR p_limit<1 THEN RAISE EXCEPTION 'Invalid speech limit'; END IF;
+ INSERT INTO public.tts_usage(user_id,date) VALUES(p_user_id,today_utc) ON CONFLICT ON CONSTRAINT tts_usage_pkey DO NOTHING;
+ SELECT * INTO saved FROM public.tts_usage WHERE user_id=p_user_id AND tts_usage.date=today_utc FOR UPDATE;
+ IF saved.requests>=p_limit THEN RETURN QUERY SELECT false,saved.date,saved.requests;RETURN; END IF;
+ UPDATE public.tts_usage SET requests=tts_usage.requests+1 WHERE user_id=p_user_id AND tts_usage.date=today_utc RETURNING * INTO saved;
+ RETURN QUERY SELECT true,saved.date,saved.requests;
+END $$;
+REVOKE ALL ON FUNCTION public.consume_tts_usage(uuid,integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_tts_usage(uuid,integer) TO service_role;
+
+-- Shared workspaces: membership writes only through authenticated transactional RPCs.
+CREATE TABLE IF NOT EXISTS public.workspaces (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ name text NOT NULL CHECK(char_length(btrim(name)) BETWEEN 1 AND 80),created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS public.workspace_members (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),workspace_id uuid NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,role text NOT NULL CHECK(role IN ('owner','member')),
+ created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(workspace_id,user_id)
+);
+CREATE TABLE IF NOT EXISTS public.workspace_invites (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),workspace_id uuid NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,email text NOT NULL CHECK(char_length(email)<=254),
+ token_hash text NOT NULL UNIQUE,expires_at timestamptz NOT NULL DEFAULT now()+interval '7 days',
+ accepted_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,accepted_at timestamptz,revoked boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.workspace_invites ADD COLUMN IF NOT EXISTS accepted_at timestamptz;
+UPDATE public.workspace_invites SET accepted_at=created_at WHERE accepted_by IS NOT NULL AND accepted_at IS NULL;
+CREATE OR REPLACE FUNCTION public.is_workspace_member(p_workspace uuid) RETURNS boolean
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT EXISTS(SELECT 1 FROM public.workspace_members WHERE workspace_id=p_workspace AND user_id=auth.uid());
+$$;
+CREATE OR REPLACE FUNCTION public.is_workspace_owner(p_workspace uuid) RETURNS boolean
+ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT EXISTS(SELECT 1 FROM public.workspaces WHERE id=p_workspace AND user_id=auth.uid());
+$$;
+REVOKE ALL ON FUNCTION public.is_workspace_member(uuid),public.is_workspace_owner(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.is_workspace_member(uuid),public.is_workspace_owner(uuid) TO authenticated,service_role;
+DO $$ DECLARE tab text; BEGIN
+ FOREACH tab IN ARRAY ARRAY['workspaces','workspace_members','workspace_invites'] LOOP
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',tab);
+  EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC,anon,authenticated',tab);
+  EXECUTE format('GRANT SELECT ON public.%I TO authenticated',tab);
+  EXECUTE format('GRANT ALL ON public.%I TO service_role',tab);
+  EXECUTE format('DROP POLICY IF EXISTS workspace_read ON public.%I',tab);
+ END LOOP;
+END $$;
+CREATE POLICY workspace_read ON public.workspaces FOR SELECT TO authenticated USING(public.is_workspace_member(id));
+CREATE POLICY workspace_read ON public.workspace_members FOR SELECT TO authenticated USING(public.is_workspace_member(workspace_id));
+-- Invite hashes and recipient email are visible only to the workspace owner.
+CREATE POLICY workspace_read ON public.workspace_invites FOR SELECT TO authenticated USING(public.is_workspace_owner(workspace_id));
+CREATE OR REPLACE FUNCTION public.create_workspace(p_name text) RETURNS public.workspaces
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE saved public.workspaces;
+BEGIN
+ IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Sign in required'; END IF;
+ PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(auth.uid()::text,827));
+ IF (SELECT count(*) FROM public.workspaces WHERE user_id=auth.uid())>=20 THEN RAISE EXCEPTION 'Workspace limit reached'; END IF;
+ INSERT INTO public.workspaces(user_id,name) VALUES(auth.uid(),btrim(p_name)) RETURNING * INTO saved;
+ INSERT INTO public.workspace_members(workspace_id,user_id,role) VALUES(saved.id,auth.uid(),'owner');
+ RETURN saved;
+END $$;
+CREATE OR REPLACE FUNCTION public.invite_workspace_member(p_workspace uuid,p_email text) RETURNS jsonb
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE token text=replace(gen_random_uuid()::text||gen_random_uuid()::text,'-','');saved public.workspace_invites;recipient text=lower(btrim(p_email));
+BEGIN
+ PERFORM 1 FROM public.workspaces WHERE id=p_workspace FOR UPDATE;
+ IF NOT public.is_workspace_owner(p_workspace) THEN RAISE EXCEPTION 'Owner required'; END IF;
+ IF recipient IS NULL OR char_length(recipient)>254 OR recipient !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' THEN RAISE EXCEPTION 'Valid email required'; END IF;
+ IF (SELECT count(*) FROM public.workspace_invites WHERE workspace_id=p_workspace AND NOT revoked AND accepted_at IS NULL AND expires_at>now())>=100 THEN RAISE EXCEPTION 'Invite limit reached'; END IF;
+ UPDATE public.workspace_invites SET revoked=true WHERE workspace_id=p_workspace AND workspace_invites.email=recipient AND accepted_at IS NULL;
+ INSERT INTO public.workspace_invites(workspace_id,user_id,email,token_hash) VALUES(p_workspace,auth.uid(),recipient,encode(sha256(convert_to(token,'UTF8')),'hex')) RETURNING * INTO saved;
+ RETURN jsonb_build_object('id',saved.id,'token',token,'expiresAt',saved.expires_at);
+END $$;
+CREATE OR REPLACE FUNCTION public.accept_workspace_invite(p_token text) RETURNS uuid
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE saved public.workspace_invites;account jsonb;
+BEGIN
+ IF auth.uid() IS NULL OR p_token IS NULL OR char_length(p_token)<>64 THEN RAISE EXCEPTION 'Invalid invite'; END IF;
+ SELECT to_jsonb(u) INTO account FROM auth.users u WHERE id=auth.uid();
+ SELECT * INTO saved FROM public.workspace_invites WHERE token_hash=encode(sha256(convert_to(p_token,'UTF8')),'hex');
+ IF NOT FOUND THEN RAISE EXCEPTION 'Invalid invite'; END IF;
+ -- Same lock ordering as invite/removal prevents races with membership revocation.
+ PERFORM 1 FROM public.workspaces WHERE id=saved.workspace_id FOR UPDATE;
+ SELECT * INTO saved FROM public.workspace_invites WHERE id=saved.id FOR UPDATE;
+ IF saved.revoked OR saved.expires_at<=now() OR lower(account->>'email') IS DISTINCT FROM saved.email
+  OR coalesce(account->>'email_confirmed_at',account->>'confirmed_at','')='' THEN RAISE EXCEPTION 'Invite expired or email does not match a verified account'; END IF;
+ IF saved.accepted_at IS NOT NULL AND saved.accepted_by IS DISTINCT FROM auth.uid() THEN RAISE EXCEPTION 'Invite already accepted'; END IF;
+ IF saved.accepted_by=auth.uid() THEN
+  IF NOT public.is_workspace_member(saved.workspace_id) THEN RAISE EXCEPTION 'Invite already used'; END IF;
+  RETURN saved.workspace_id;
+ END IF;
+ IF (SELECT count(*) FROM public.workspace_members WHERE workspace_id=saved.workspace_id)>=100 THEN RAISE EXCEPTION 'Member limit reached'; END IF;
+ INSERT INTO public.workspace_members(workspace_id,user_id,role) VALUES(saved.workspace_id,auth.uid(),'member') ON CONFLICT(workspace_id,user_id) DO NOTHING;
+ UPDATE public.workspace_invites SET accepted_by=auth.uid(),accepted_at=now() WHERE id=saved.id;
+ RETURN saved.workspace_id;
+END $$;
+CREATE OR REPLACE FUNCTION public.remove_workspace_member(p_workspace uuid,p_user uuid) RETURNS void
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ PERFORM 1 FROM public.workspaces WHERE id=p_workspace FOR UPDATE;
+ IF NOT public.is_workspace_owner(p_workspace) AND auth.uid() IS DISTINCT FROM p_user THEN RAISE EXCEPTION 'Owner required'; END IF;
+ IF NOT public.is_workspace_member(p_workspace) THEN RAISE EXCEPTION 'Membership required'; END IF;
+ IF EXISTS(SELECT 1 FROM public.workspaces WHERE id=p_workspace AND user_id=p_user) THEN RAISE EXCEPTION 'Owner cannot leave'; END IF;
+ DELETE FROM public.workspace_members WHERE workspace_id=p_workspace AND user_id=p_user;
+ UPDATE public.workspace_invites SET revoked=true WHERE workspace_id=p_workspace AND accepted_by=p_user;
+END $$;
+CREATE OR REPLACE FUNCTION public.revoke_workspace_invite(p_id uuid) RETURNS void
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ UPDATE public.workspace_invites SET revoked=true WHERE id=p_id AND public.is_workspace_owner(workspace_id);
+ IF NOT FOUND THEN RAISE EXCEPTION 'Owner required'; END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.create_workspace(text),public.invite_workspace_member(uuid,text),public.accept_workspace_invite(text),public.remove_workspace_member(uuid,uuid),public.revoke_workspace_invite(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.create_workspace(text),public.invite_workspace_member(uuid,text),public.accept_workspace_invite(text),public.remove_workspace_member(uuid,uuid),public.revoke_workspace_invite(uuid) TO authenticated;
+
+-- Existing personal data remains NULL-scoped. Scope/creator cannot be changed later.
+CREATE OR REPLACE FUNCTION public.guard_workspace_row() RETURNS trigger LANGUAGE plpgsql SET search_path='' AS $$
+BEGIN
+ IF current_user IN ('authenticated','anon') AND TG_OP='UPDATE' AND (NEW.workspace_id IS DISTINCT FROM OLD.workspace_id OR NEW.user_id IS DISTINCT FROM OLD.user_id) THEN
+  RAISE EXCEPTION 'Row workspace and creator are immutable';
+ END IF;
+ RETURN NEW;
+END $$;
+DO $$ DECLARE tab text;pol record; BEGIN
+ FOREACH tab IN ARRAY ARRAY['tasks','categories','meetings','vault_items'] LOOP
+  EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE',tab);
+  EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I(workspace_id)',tab||'_workspace_idx',tab);
+  FOR pol IN SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=tab LOOP
+   EXECUTE format('DROP POLICY %I ON public.%I',pol.policyname,tab);
+  END LOOP;
+  EXECUTE format('CREATE POLICY workspace_rows_read ON public.%I FOR SELECT TO authenticated USING ((workspace_id IS NULL AND user_id=auth.uid()) OR public.is_workspace_member(workspace_id))',tab);
+  EXECUTE format('CREATE POLICY workspace_rows_insert ON public.%I FOR INSERT TO authenticated WITH CHECK (user_id=auth.uid() AND (workspace_id IS NULL OR public.is_workspace_member(workspace_id)))',tab);
+  EXECUTE format('CREATE POLICY workspace_rows_update ON public.%I FOR UPDATE TO authenticated USING ((workspace_id IS NULL AND user_id=auth.uid()) OR public.is_workspace_member(workspace_id)) WITH CHECK ((workspace_id IS NULL AND user_id=auth.uid()) OR public.is_workspace_member(workspace_id))',tab);
+  EXECUTE format('CREATE POLICY workspace_rows_delete ON public.%I FOR DELETE TO authenticated USING ((workspace_id IS NULL AND user_id=auth.uid()) OR public.is_workspace_member(workspace_id))',tab);
+  EXECUTE format('DROP TRIGGER IF EXISTS guard_workspace_scope ON public.%I',tab);
+  EXECUTE format('CREATE TRIGGER guard_workspace_scope BEFORE UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.guard_workspace_row()',tab);
+ END LOOP;
+END $$;
+ALTER TABLE public.dante_messages ADD COLUMN IF NOT EXISTS workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE;
+DROP POLICY IF EXISTS "Users see own dante_messages" ON public.dante_messages;
+CREATE POLICY "Users see own dante_messages" ON public.dante_messages FOR ALL TO authenticated
+ USING(user_id=auth.uid() AND (workspace_id IS NULL OR public.is_workspace_member(workspace_id)))
+ WITH CHECK(user_id=auth.uid() AND (workspace_id IS NULL OR public.is_workspace_member(workspace_id)));
+DROP TRIGGER IF EXISTS guard_workspace_scope ON public.dante_messages;
+CREATE TRIGGER guard_workspace_scope BEFORE UPDATE ON public.dante_messages FOR EACH ROW EXECUTE FUNCTION public.guard_workspace_row();
+
+-- Shared broadcasts carry invalidations only; revoked clients cannot receive row content.
+CREATE OR REPLACE FUNCTION public.broadcast_workspace_change()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE item jsonb=CASE WHEN TG_OP='DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;scope uuid=(item->>'workspace_id')::uuid;
+BEGIN
+ IF scope IS NOT NULL THEN
+  PERFORM realtime.send(jsonb_build_object('workspace_id',scope),'changed','zenos:shared:'||scope::text,true);
+ ELSIF TG_OP='UPDATE' AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+  PERFORM realtime.broadcast_changes('zenos:workspace:'||OLD.user_id::text,'DELETE','DELETE',TG_TABLE_NAME,TG_TABLE_SCHEMA,NULL,OLD);
+  PERFORM realtime.broadcast_changes('zenos:workspace:'||NEW.user_id::text,'INSERT','INSERT',TG_TABLE_NAME,TG_TABLE_SCHEMA,NEW,NULL);
+ ELSIF TG_OP='DELETE' THEN
+  PERFORM realtime.broadcast_changes('zenos:workspace:'||OLD.user_id::text,TG_OP,TG_OP,TG_TABLE_NAME,TG_TABLE_SCHEMA,NEW,OLD);
+ ELSE
+  PERFORM realtime.broadcast_changes('zenos:workspace:'||NEW.user_id::text,TG_OP,TG_OP,TG_TABLE_NAME,TG_TABLE_SCHEMA,NEW,OLD);
+ END IF;
+ RETURN NULL;
+END $$;
+CREATE OR REPLACE FUNCTION public.can_read_shared_topic(p_topic text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT EXISTS(SELECT 1 FROM public.workspace_members WHERE user_id=auth.uid() AND p_topic='zenos:shared:'||workspace_id::text);
+$$;
+REVOKE ALL ON FUNCTION public.can_read_shared_topic(text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.can_read_shared_topic(text) TO anon,authenticated;
+DO $$ DECLARE tab text; BEGIN
+ IF to_regclass('realtime.messages') IS NULL THEN RETURN; END IF;
+ IF to_regprocedure('realtime.send(jsonb,text,text,boolean)') IS NULL THEN RETURN; END IF;
+ DROP POLICY IF EXISTS zenos_shared_read ON realtime.messages;
+ CREATE POLICY zenos_shared_read ON realtime.messages FOR SELECT TO authenticated USING(extension='broadcast' AND topic=(SELECT realtime.topic()) AND public.can_read_shared_topic(topic));
+ DROP POLICY IF EXISTS zenos_shared_isolation ON realtime.messages;
+ CREATE POLICY zenos_shared_isolation ON realtime.messages AS RESTRICTIVE FOR SELECT TO anon,authenticated USING(topic NOT LIKE 'zenos:shared:%' OR (auth.uid() IS NOT NULL AND extension='broadcast' AND topic=(SELECT realtime.topic()) AND public.can_read_shared_topic(topic)));
+ DROP POLICY IF EXISTS zenos_shared_no_write ON realtime.messages;
+ CREATE POLICY zenos_shared_no_write ON realtime.messages AS RESTRICTIVE FOR INSERT TO anon,authenticated WITH CHECK(topic NOT LIKE 'zenos:shared:%');
+ DROP POLICY IF EXISTS zenos_shared_no_update ON realtime.messages;
+ CREATE POLICY zenos_shared_no_update ON realtime.messages AS RESTRICTIVE FOR UPDATE TO anon,authenticated USING(topic NOT LIKE 'zenos:shared:%') WITH CHECK(topic NOT LIKE 'zenos:shared:%');
+ FOREACH tab IN ARRAY ARRAY['tasks','categories','meetings','vault_items'] LOOP
+  EXECUTE format('DROP TRIGGER IF EXISTS zenos_workspace_broadcast ON public.%I',tab);
+  EXECUTE format('CREATE TRIGGER zenos_workspace_broadcast AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.broadcast_workspace_change()',tab);
+ END LOOP;
+EXCEPTION WHEN insufficient_privilege THEN
+ RAISE WARNING 'Shared workspace Realtime setup deferred: an owner of realtime.messages must apply this block. Cloud reads remain protected by RLS; clients also refresh on focus and periodically.';
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS shared_task_successor ON public.tasks(workspace_id,recurrence_source_id) WHERE workspace_id IS NOT NULL;
+CREATE OR REPLACE FUNCTION public.create_next_task_occurrence()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE
+  due date;
+  next_due date;
+  anchor_day integer;
+  next_reminder text := '';
+BEGIN
+  IF NEW.status IS DISTINCT FROM 'done' OR OLD.status IS NOT DISTINCT FROM 'done' OR NEW.recurrence = 'none' THEN RETURN NEW; END IF;
+  BEGIN due := NULLIF(NEW.date, '')::date;
+  EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN due := NULL; END;
+  due := COALESCE(due, (NEW.completed_at AT TIME ZONE 'UTC')::date, (now() AT TIME ZONE 'UTC')::date);
+  anchor_day := COALESCE(NEW.recurrence_day, extract(day FROM due)::integer);
+  IF NEW.recurrence = 'monthly' THEN
+    next_due := (date_trunc('month', due) + interval '1 month')::date;
+    next_due := next_due + least(anchor_day, extract(day FROM (next_due + interval '1 month - 1 day'))::integer) - 1;
+  ELSE
+    next_due := due + CASE WHEN NEW.recurrence = 'weekly' THEN 7 ELSE 1 END;
+    WHILE NEW.recurrence = 'weekdays' AND extract(isodow FROM next_due) > 5 LOOP next_due := next_due + 1; END LOOP;
+  END IF;
+  IF NEW.reminder ~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$' THEN
+    BEGIN next_reminder := to_char(NEW.reminder::timestamp + (next_due - due) * interval '1 day', 'YYYY-MM-DD"T"HH24:MI');
+    EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN next_reminder := ''; END;
+  END IF;
+  INSERT INTO public.tasks(workspace_id, user_id, title, cat, status, date, reminder, note, progress, steps, completed_at, recurrence, recurrence_day, recurrence_source_id)
+  VALUES (NEW.workspace_id, CASE WHEN NEW.workspace_id IS NULL THEN NEW.user_id ELSE coalesce(auth.uid(),NEW.user_id) END, NEW.title, NEW.cat, 'todo', next_due::text, next_reminder, NEW.note, 0,
+    COALESCE((SELECT jsonb_agg(jsonb_build_object('label', step->>'label', 'done', false))
+      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(NEW.steps) = 'array' THEN NEW.steps ELSE '[]'::jsonb END) step
+      WHERE jsonb_typeof(step) = 'object' AND step ? 'label'), '[]'::jsonb),
+    NULL, NEW.recurrence, anchor_day, NEW.id)
+  ON CONFLICT DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.search_source_document(kind text, item jsonb)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $fn$
+DECLARE title text; body text;
+BEGIN
+  IF item->>'workspace_id' IS NOT NULL THEN RETURN NULL; END IF;
+  CASE kind
+    WHEN 'task' THEN
+      IF btrim(coalesce(item->>'note',''))='' THEN RETURN NULL; END IF;
+      title := left(item->>'title',200); body := 'Task: ' || coalesce(item->>'title','') || E'\nNotes: ' || (item->>'note');
+    WHEN 'meeting' THEN
+      IF btrim(coalesce(item->>'notes',''))='' THEN RETURN NULL; END IF;
+      title := left(coalesce(item->>'person_name','') || ': ' || coalesce(item->>'subject',''),200);
+      body := 'Meeting with ' || coalesce(item->>'person_name','') || ' on ' || coalesce(item->>'date','') || ': ' || coalesce(item->>'subject','') || E'\nNotes: ' || (item->>'notes');
+    WHEN 'vault' THEN
+      title := left(item->>'name',200); body := coalesce(item->>'name','') || E'\n' || coalesce(item->>'detail','') || E'\n' || coalesce(item->>'url','');
+    WHEN 'lecture' THEN
+      title := left(item->>'title',200); body := 'Lecture: ' || coalesce(item->>'title','') || E'\nSummary: ' || coalesce(item->>'summary','');
+    ELSE RETURN NULL;
+  END CASE;
+  IF btrim(body)='' THEN RETURN NULL; END IF;
+  RETURN jsonb_build_object('title',coalesce(nullif(btrim(title),''),'Untitled'),'content',btrim(body));
+END;
+$fn$;
+
+DO $$ BEGIN IF to_regclass('public.embeddings') IS NULL THEN RETURN; END IF;
+DELETE FROM public.embeddings e WHERE (e.source_type='task' AND EXISTS(SELECT 1 FROM public.tasks t WHERE t.id=e.source_id AND t.workspace_id IS NOT NULL)) OR (e.source_type='meeting' AND EXISTS(SELECT 1 FROM public.meetings t WHERE t.id=e.source_id AND t.workspace_id IS NOT NULL)) OR (e.source_type='vault' AND EXISTS(SELECT 1 FROM public.vault_items t WHERE t.id=e.source_id AND t.workspace_id IS NOT NULL));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.lock_workspace_member(p_workspace uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+ IF NOT public.is_workspace_member(p_workspace) THEN RAISE EXCEPTION 'Workspace membership required'; END IF;
+ PERFORM 1 FROM public.workspaces WHERE id=p_workspace FOR SHARE;
+ IF NOT public.is_workspace_member(p_workspace) THEN RAISE EXCEPTION 'Workspace membership required'; END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.lock_workspace_member(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.lock_workspace_member(uuid) TO authenticated;
+CREATE OR REPLACE FUNCTION public.save_workspace_exam_plan(p_owner uuid, p_draft jsonb, p_sessions jsonb, p_expected jsonb DEFAULT NULL, p_start_date date DEFAULT CURRENT_DATE, p_workspace uuid DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path = public AS $$
+DECLARE
+  cat_row categories%ROWTYPE;
+  item jsonb;
+  current_snapshot jsonb;
+  plan_id text := p_draft->>'id';
+  budget integer := (p_draft->>'minutesPerDay')::integer;
+  metadata jsonb;
+BEGIN
+  IF auth.uid() IS NULL OR auth.uid() <> p_owner THEN RAISE EXCEPTION 'Account changed'; END IF;
+  IF p_workspace IS NOT NULL AND NOT public.is_workspace_member(p_workspace) THEN RAISE EXCEPTION 'Workspace membership required'; END IF;
+  PERFORM pg_advisory_xact_lock(hashtext(coalesce(p_workspace,p_owner)::text || ':exam-plans'));
+  IF p_workspace IS NOT NULL THEN PERFORM public.lock_workspace_member(p_workspace); END IF;
+  IF p_start_date IS NULL OR budget IS NULL OR p_draft->>'examDate' IS NULL OR p_sessions IS NULL OR plan_id IS NULL OR length(plan_id) > 100 OR nullif(trim(p_draft->>'name'),'') IS NULL
+     OR length(p_draft->>'name') > 160 OR budget < 1 OR budget > 1440
+     OR jsonb_typeof(p_sessions) <> 'array' OR jsonb_array_length(p_sessions) NOT BETWEEN 1 AND 100
+     OR p_start_date NOT BETWEEN CURRENT_DATE - 1 AND CURRENT_DATE + 1
+     OR (p_draft->>'examDate')::date <= p_start_date THEN RAISE EXCEPTION 'Invalid exam plan'; END IF;
+  PERFORM 1 FROM tasks WHERE ((p_workspace IS NULL AND user_id=p_owner AND workspace_id IS NULL) OR (p_workspace IS NOT NULL AND workspace_id=p_workspace)) AND exam_plan->>'id' = plan_id FOR UPDATE;
+  IF p_expected IS NOT NULL THEN
+    SELECT coalesce(jsonb_agg(jsonb_build_object('id',id::text,'date',date,'status',status,'steps',coalesce(steps,'[]'::jsonb),'exam_plan',exam_plan) ORDER BY id::text),'[]'::jsonb)
+      INTO current_snapshot FROM tasks
+      WHERE ((p_workspace IS NULL AND user_id=p_owner AND workspace_id IS NULL) OR (p_workspace IS NOT NULL AND workspace_id=p_workspace)) AND exam_plan->>'id' = plan_id AND status <> 'done'
+      AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(steps,'[]'::jsonb)) step WHERE step->>'id' = exam_plan->>'topicId' AND step->>'done' = 'true');
+    IF current_snapshot <> p_expected THEN RAISE EXCEPTION 'Plan changed. Refresh and try again.'; END IF;
+    IF jsonb_array_length(p_expected) <> jsonb_array_length(p_sessions) THEN RAISE EXCEPTION 'Topic mismatch'; END IF;
+  END IF;
+  SELECT * INTO cat_row FROM categories WHERE ((p_workspace IS NULL AND user_id=p_owner AND workspace_id IS NULL) OR (p_workspace IS NOT NULL AND workspace_id=p_workspace)) AND lower(trim(label)) = 'exams' ORDER BY id LIMIT 1;
+  IF cat_row.id IS NULL THEN
+    INSERT INTO categories(workspace_id,user_id,label,color,slug) VALUES(p_workspace,p_owner,'Exams','#8151eb','exams') RETURNING * INTO cat_row;
+  END IF;
+  IF p_expected IS NULL AND EXISTS(SELECT 1 FROM tasks WHERE ((p_workspace IS NULL AND user_id=p_owner AND workspace_id IS NULL) OR (p_workspace IS NOT NULL AND workspace_id=p_workspace)) AND exam_plan->>'id' = plan_id) THEN
+    RETURN jsonb_build_object('category',to_jsonb(cat_row),'tasks',(SELECT jsonb_agg(to_jsonb(t)) FROM tasks t WHERE ((p_workspace IS NULL AND user_id=p_owner AND workspace_id IS NULL) OR (p_workspace IS NOT NULL AND workspace_id=p_workspace)) AND exam_plan->>'id' = plan_id));
+  END IF;
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_sessions) x GROUP BY x->>'topicId' HAVING count(*) > 1)
+    OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_sessions) x GROUP BY x->>'date' HAVING sum((x->>'minutes')::integer) > budget)
+    THEN RAISE EXCEPTION 'Invalid study capacity'; END IF;
+  FOR item IN SELECT * FROM jsonb_array_elements(p_sessions) LOOP
+    IF item->>'date' IS NULL OR item->>'minutes' IS NULL OR nullif(trim(item->>'topic'),'') IS NULL OR length(item->>'topic') > 200 OR nullif(item->>'topicId','') IS NULL
+      OR (item->>'date')::date < p_start_date OR (item->>'date')::date >= (p_draft->>'examDate')::date
+      OR (item->>'minutes')::integer <> least(25,budget) THEN RAISE EXCEPTION 'Invalid session'; END IF;
+    metadata := jsonb_build_object('id',plan_id,'name',trim(p_draft->>'name'),'examDate',p_draft->>'examDate','minutesPerDay',budget,'topicId',item->>'topicId');
+    IF p_expected IS NULL THEN
+      INSERT INTO tasks(workspace_id,user_id,title,cat,status,date,reminder,note,progress,steps,exam_plan)
+        VALUES(p_workspace,p_owner,trim(p_draft->>'name') || ': ' || trim(item->>'topic'),cat_row.id,'todo',item->>'date','','Study session: ' || (item->>'minutes') || ' minutes',0,
+          jsonb_build_array(jsonb_build_object('id',item->>'topicId','label',trim(item->>'topic'),'done',false)),metadata);
+    ELSE
+      UPDATE tasks SET date = item->>'date', exam_plan = metadata
+        WHERE ((p_workspace IS NULL AND user_id=p_owner AND workspace_id IS NULL) OR (p_workspace IS NOT NULL AND workspace_id=p_workspace)) AND exam_plan->>'id' = plan_id AND exam_plan->>'topicId' = item->>'topicId'
+        AND id::text IN (SELECT x->>'id' FROM jsonb_array_elements(p_expected) x);
+      IF NOT FOUND THEN RAISE EXCEPTION 'Topic changed'; END IF;
+    END IF;
+  END LOOP;
+  RETURN jsonb_build_object('category',to_jsonb(cat_row),'tasks',(SELECT jsonb_agg(to_jsonb(t)) FROM tasks t WHERE ((p_workspace IS NULL AND user_id=p_owner AND workspace_id IS NULL) OR (p_workspace IS NOT NULL AND workspace_id=p_workspace)) AND exam_plan->>'id' = plan_id));
+END; $$;
+
+REVOKE ALL ON FUNCTION public.save_workspace_exam_plan(uuid,jsonb,jsonb,jsonb,date,uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.save_workspace_exam_plan(uuid,jsonb,jsonb,jsonb,date,uuid) TO authenticated;
+CREATE OR REPLACE FUNCTION public.save_exam_plan(p_owner uuid,p_draft jsonb,p_sessions jsonb,p_expected jsonb DEFAULT NULL,p_start_date date DEFAULT CURRENT_DATE)
+RETURNS jsonb LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$ SELECT public.save_workspace_exam_plan(p_owner,p_draft,p_sessions,p_expected,p_start_date,NULL); $$;
+
+CREATE OR REPLACE FUNCTION public.add_lecture_task(p_lecture_id uuid, p_index integer, p_date date)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+DECLARE saved public.lectures%ROWTYPE; item jsonb; added public.tasks%ROWTYPE; category text;
+BEGIN
+  IF auth.uid() IS NULL OR p_index IS NULL OR p_index < 0 OR p_date IS NULL OR abs(p_date - (now() AT TIME ZONE 'UTC')::date) > 1 THEN RAISE EXCEPTION 'Invalid lecture action'; END IF;
+  SELECT * INTO saved FROM public.lectures WHERE id = p_lecture_id AND user_id = auth.uid() FOR UPDATE;
+  IF NOT FOUND OR p_index >= jsonb_array_length(saved.action_items) THEN RAISE EXCEPTION 'Lecture action not found'; END IF;
+  item := saved.action_items->p_index;
+  IF item->>'task_id' IS NOT NULL THEN
+    SELECT * INTO added FROM public.tasks WHERE user_id = auth.uid() AND id::text = item->>'task_id';
+    IF FOUND THEN RETURN jsonb_build_object('lecture',to_jsonb(saved),'task',to_jsonb(added)); END IF;
+  END IF;
+  SELECT id::text INTO category FROM public.categories WHERE user_id = auth.uid() AND workspace_id IS NULL ORDER BY (lower(label) = 'other') DESC,id LIMIT 1;
+  INSERT INTO public.tasks(user_id,title,cat,status,date,reminder,note,progress,steps)
+    VALUES(auth.uid(),item->>'title',coalesce(category,'other'),'todo',p_date::text,'','From lecture: ' || saved.title,0,'[]') RETURNING * INTO added;
+  UPDATE public.lectures SET action_items = jsonb_set(action_items, ARRAY[p_index::text,'task_id'], to_jsonb(added.id::text), true)
+    WHERE id = saved.id RETURNING * INTO saved;
+  RETURN jsonb_build_object('lecture',to_jsonb(saved),'task',to_jsonb(added));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.focus_completion_streak(p_user_id uuid,p_time_zone text)
+RETURNS integer LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+ WITH days AS (SELECT DISTINCT (completed_at AT TIME ZONE p_time_zone)::date AS day FROM public.tasks WHERE user_id=p_user_id AND workspace_id IS NULL AND status='done' AND completed_at IS NOT NULL AND completed_at<=now() AND completed_at>now()-interval '3652 days'),
+ ordered AS (SELECT day,row_number() OVER(ORDER BY day DESC) AS n FROM days),
+ latest AS (SELECT max(day) AS day FROM days)
+ SELECT least(3650,count(*))::integer FROM ordered,latest WHERE latest.day>=(now() AT TIME ZONE p_time_zone)::date-1 AND latest.day-ordered.day=ordered.n-1;
+$$;
+
+CREATE OR REPLACE FUNCTION public.generate_weekly_recap(p_user_id uuid,p_automatic boolean DEFAULT false)
+RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE pref public.weekly_recap_preferences%ROWTYPE; stamp timestamptz=now();today_local date;ending date;starting date;cutoff timestamptz;done_count integer;best date;best_count integer;streak_count integer;slipped integer;slipped_rows jsonb;advice text;saved public.weekly_recaps%ROWTYPE;
+BEGIN
+ SELECT * INTO pref FROM public.weekly_recap_preferences WHERE user_id=p_user_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Configure weekly recaps first'; END IF;
+ IF p_automatic AND (NOT pref.enabled OR pref.next_due_at>stamp) THEN RETURN NULL; END IF;
+ today_local:=(stamp AT TIME ZONE pref.time_zone)::date;
+ IF p_automatic THEN
+  ending:=today_local-(extract(isodow FROM today_local)::integer%7);
+  IF (ending+time '18:00') AT TIME ZONE pref.time_zone>stamp THEN ending:=ending-7; END IF;
+ ELSE ending:=today_local; END IF;
+ starting:=ending-(extract(isodow FROM ending)::integer-1);
+ cutoff:=least(stamp,((ending+1)::timestamp AT TIME ZONE pref.time_zone));
+ SELECT count(*) INTO done_count FROM public.tasks WHERE user_id=p_user_id AND workspace_id IS NULL AND status='done' AND completed_at>=(starting::timestamp AT TIME ZONE pref.time_zone) AND completed_at<cutoff;
+ SELECT (completed_at AT TIME ZONE pref.time_zone)::date,count(*)::integer INTO best,best_count FROM public.tasks WHERE user_id=p_user_id AND workspace_id IS NULL AND status='done' AND completed_at>=(starting::timestamp AT TIME ZONE pref.time_zone) AND completed_at<cutoff GROUP BY 1 ORDER BY 2 DESC,1 LIMIT 1;
+ WITH days AS(SELECT DISTINCT (completed_at AT TIME ZONE pref.time_zone)::date AS day FROM public.tasks WHERE user_id=p_user_id AND workspace_id IS NULL AND status='done' AND completed_at<cutoff AND completed_at>cutoff-interval '3652 days'),
+ ordered AS(SELECT day,row_number() OVER(ORDER BY day DESC) AS n FROM days),latest AS(SELECT max(day) AS day FROM days)
+ SELECT least(3650,count(*))::integer INTO streak_count FROM ordered,latest WHERE latest.day>=ending-1 AND latest.day-ordered.day=ordered.n-1;
+ -- Source due dates are text; lexical comparison is safe only for canonical dates.
+ SELECT count(*) INTO slipped FROM public.tasks t WHERE t.user_id=p_user_id AND t.workspace_id IS NULL AND t.status<>'done' AND t.date IN(SELECT (starting+n)::text FROM generate_series(0,6) AS days(n)) AND t.date>=starting::text AND t.date<=ending::text AND t.date<today_local::text;
+ SELECT coalesce(jsonb_agg(jsonb_build_object('id',entry.id,'title',left(coalesce(nullif(btrim(entry.title),''),'Untitled task'),200)) ORDER BY entry.date,entry.id),'[]'::jsonb) INTO slipped_rows FROM(SELECT id,title,date FROM public.tasks t WHERE t.user_id=p_user_id AND t.workspace_id IS NULL AND t.status<>'done' AND t.date IN(SELECT (starting+n)::text FROM generate_series(0,6) AS days(n)) AND t.date>=starting::text AND t.date<=ending::text AND t.date<today_local::text ORDER BY date,id LIMIT 3)entry;
+ advice:=CASE WHEN slipped>0 THEN 'Choose one slipped task and give it a smaller first step.' WHEN done_count=0 THEN 'Pick one small task for a ten-minute start.' WHEN streak_count>=5 THEN 'Keep your rhythm, and leave space for a proper break.' ELSE 'Protect a short focus block on your calendar next week.' END;
+ INSERT INTO public.weekly_recaps(user_id,week_start,through_date,time_zone,tasks_done,best_day,best_day_count,streak,slipped_count,slipped_tasks,suggestion,kind)
+ VALUES(p_user_id,starting,ending,pref.time_zone,done_count,best,coalesce(best_count,0),streak_count,slipped,slipped_rows,advice,CASE WHEN p_automatic THEN 'scheduled' ELSE 'manual' END)
+ ON CONFLICT(user_id,week_start) DO UPDATE SET through_date=excluded.through_date,time_zone=excluded.time_zone,tasks_done=excluded.tasks_done,best_day=excluded.best_day,best_day_count=excluded.best_day_count,streak=excluded.streak,slipped_count=excluded.slipped_count,slipped_tasks=excluded.slipped_tasks,suggestion=excluded.suggestion,kind=excluded.kind,updated_at=stamp RETURNING * INTO saved;
+ DELETE FROM public.weekly_recaps WHERE user_id=p_user_id AND id NOT IN(SELECT id FROM public.weekly_recaps WHERE user_id=p_user_id ORDER BY week_start DESC LIMIT 8);
+ IF p_automatic THEN UPDATE public.weekly_recap_preferences SET next_due_at=((ending+7)+time '18:00') AT TIME ZONE pref.time_zone WHERE user_id=p_user_id; END IF;
+ RETURN to_jsonb(saved)-'user_id';
+END $$;

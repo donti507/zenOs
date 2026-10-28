@@ -186,8 +186,8 @@ export default function Home() {
         </div>
       </motion.section>
 
-      <WeeklyRecap key={user?.id||'local'} />
-      <SpaceWidgets />
+      {!state.workspaceId&&<WeeklyRecap key={user?.id||'local'} />}
+      {!state.workspaceId&&<SpaceWidgets />}
       <PostponedTasks />
 
       {/* Dante command center */}

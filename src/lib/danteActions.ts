@@ -49,6 +49,7 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
   const validDate = (d: unknown) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : undefined);
 
   const executeAction = async (a: DanteAction): Promise<ActionResult> => {
+    if(stateRef.current.workspaceId&&['remember','forget','edit_space_page'].includes(a.action))return {label:'Personal feature',ok:false,detail:'Switch to Personal space to use this feature.'};
     const d = a.data || {};
     switch (a.action) {
       case 'edit_space_page': {
@@ -156,8 +157,10 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
   };
 
 
+  const workspace=stateRef.current.workspaceId,epoch=stateRef.current.workspaceEpoch;
   const results: ActionResult[] = [];
   for (const a of actions.slice(0, 10)) {
+    if(stateRef.current.workspaceId!==workspace||stateRef.current.workspaceEpoch!==epoch)break;
     try {
       results.push(await executeAction(a));
     } catch (e: any) {

@@ -1,3 +1,4 @@
+import WorkspaceSwitcher from '../WorkspaceSwitcher';
 import AccountControls from '../AccountControls';
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
@@ -5,6 +6,7 @@ import { useZenos } from '../../context/ZenosContext';
 import { categoryTone } from '../../lib/utils';
 
 const NAV = [
+  { to:'/workspaces',label:'Workspaces',icon:'group' },
   { to: '/', label: 'Home', icon: 'home' },
   { to: '/board', label: 'Board', icon: 'view_kanban' },
   { to: '/calendar', label: 'Calendar', icon: 'calendar_today' },
@@ -45,6 +47,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           {!collapsed && <span className="text-[16px] leading-6 font-semibold tracking-tight text-on-surface">ZEN OS</span>}
         </div>
 
+        {!collapsed&&<WorkspaceSwitcher />}
         {/* Ask Dante */}
         <div className="px-2 mb-2">
           <NavLink

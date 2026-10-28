@@ -1,3 +1,4 @@
+import {useSharedWorkspaces} from '../hooks/useSharedWorkspaces';
 import {useWeeklyRecaps} from '../hooks/useWeeklyRecaps';
 import {useFocusRooms} from '../hooks/useFocusRooms';
 import {useChallenges} from '../hooks/useChallenges';
@@ -101,7 +102,9 @@ const compact = (o: Record<string, any>) => Object.fromEntries(Object.entries(o)
 
 export type NewMeeting = Omit<Meeting, 'id' | 'createdAt'>;
 
-interface ZenosContextType extends ReturnType<typeof useGallery>, ReturnType<typeof useChallenges>, ReturnType<typeof useFocusRooms>, ReturnType<typeof useWeeklyRecaps> {
+interface ZenosContextType extends ReturnType<typeof useSharedWorkspaces>, ReturnType<typeof useGallery>, ReturnType<typeof useChallenges>, ReturnType<typeof useFocusRooms>, ReturnType<typeof useWeeklyRecaps> {
+  activeWorkspaceId: string | null;
+  switchWorkspace: (id:string|null)=>void;
   focusSession: FocusSession | null;
   startTaskFocus: (taskId: Task['id']) => void;
   stopTaskFocus: () => void;
@@ -233,12 +236,17 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const [usageState, setUsageState] = useState<{ userId: string | null; data: DanteUsage | null; error: string | null }>({ userId: null, data: null, error: null });
   const usageRequest = useRef(0);
   const taskReloadRequest = useRef(0);
+  const [activeWorkspaceId,setActiveWorkspaceId]=useState<string|null>(null);
+  const activeWorkspaceRef=useRef<string|null>(null);
+  const scopeRevision=useRef(0);
+  const scopeRows=(rows:any[]|null,scope=activeWorkspaceRef.current)=>(rows||[]).filter(row=>(row.workspace_id??null)===scope);
+  const scopeQuery=(query:any,owner:string,scope=activeWorkspaceRef.current)=>scope?query.eq('workspace_id',scope):query.eq('user_id',owner).is('workspace_id',null);
   const workspaceOwner = useRef<string | null>(null);
   const workspaceReadVersion = useRef(0);
   const workspaceSessionGeneration = useRef(0);
   const deletedWorkspaceRows = useRef(new Set<string>());
   const insertCloudRow = (state: ZenosState, owner: string, table: WorkspaceTable, row: Record<string, any>) =>
-    workspaceOwner.current === owner && !deletedWorkspaceRows.current.has(`${table}:${row.id}`) ? insertWorkspaceRow(state, table, row) : state;
+    workspaceOwner.current === owner && (row.workspace_id??null)===activeWorkspaceRef.current && !deletedWorkspaceRows.current.has(`${table}:${row.id}`) ? insertWorkspaceRow(state, table, row) : state;
   const pendingWorkspaceReads = useRef(new Set<{ owner: string; changes: WorkspaceChange[] }>());
   const [mounted, setMounted] = useState(false);
   const [showModal, setShowModal] = useState<string | null>(null);
@@ -283,7 +291,21 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     try { requested = sessionStorage.getItem(GOOGLE_CONNECT_PENDING) === 'true'; } catch { /* storage unavailable */ }
     if (requested && session.provider_refresh_token && session.access_token) setGoogleProviderSession({ userId: session.user.id, refreshToken: session.provider_refresh_token, authToken: session.access_token });
   };
-  const lectures = useLectures({ ownerId: user?.id ?? null, isOffline, stateRef, setState, isCurrent: () => !!userRef.current && userRef.current.id === user?.id && offlineRef.current === isOffline && workspaceOwner.current === (isOffline ? null : user?.id) });
+  const switchWorkspace=(id:string|null)=>{
+    if(id && (offlineRef.current || !shared.hasWorkspace(id)))return;
+    if(activeWorkspaceRef.current===id)return;
+    focus.stopFocus();
+    activeWorkspaceRef.current=id;++scopeRevision.current;++workspaceReadVersion.current;++taskReloadRequest.current;++memoryRead.current;
+    setActiveWorkspaceId(id);setLiveOpen(false);setShowModal(null);setEditTaskId(null);setCloudLoadedFor(null);
+    const cleared={...stateRef.current,workspaceId:id,workspaceEpoch:scopeRevision.current,tasks:[],categories:[],meetings:[],vault:[],completionLog:[],danteHistory:[],danteMemory:[],lectures:[],filterCat:null,instantMeetEvent:null};
+    stateRef.current=cleared;setState(cleared);
+    if(userRef.current&&!offlineRef.current)void fetchUserData(userRef.current.id);
+  };
+  const resetWorkspaceScope=()=>{activeWorkspaceRef.current=null;++scopeRevision.current;++workspaceReadVersion.current;setActiveWorkspaceId(null);};
+  const shared=useSharedWorkspaces(user?.id??null,isOffline,ids=>{if(activeWorkspaceRef.current&&!ids.includes(activeWorkspaceRef.current))switchWorkspace(null);});
+  useEffect(()=>{if(activeWorkspaceRef.current){activeWorkspaceRef.current=null;++scopeRevision.current;setActiveWorkspaceId(null);setState(s=>({...s,workspaceId:null}));}},[user?.id,isOffline]);
+  const lectures = useLectures({ ownerId: user?.id ?? null, isOffline, stateRef, setState, isCurrent: () => !activeWorkspaceRef.current && !!userRef.current && userRef.current.id === user?.id && offlineRef.current === isOffline && workspaceOwner.current === (isOffline ? null : user?.id) });
+  useEffect(()=>{if(!activeWorkspaceId&&user&&!isOffline)void lectures.refreshLectures();},[activeWorkspaceId]);
   const arena = useModelArena({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const spaces = useSpacePages({ownerId:user?.id??null,isOffline,getToken:getAuthToken,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
   const gallery = useGallery({ownerId:user?.id??null,isOffline,getToken:getAuthToken,refreshSpacePages:spaces.refreshSpacePages,isCurrent:()=>!!userRef.current&&userRef.current.id===user?.id&&offlineRef.current===isOffline&&workspaceOwner.current===(isOffline?null:user?.id)});
@@ -332,17 +354,18 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       loadLocalData();
       return;
     }
+    const scope=activeWorkspaceRef.current;
     const version = ++workspaceReadVersion.current;
     const read = { owner: userId, changes: [] as WorkspaceChange[] };
     pendingWorkspaceReads.current.add(read);
-    const current = () => workspaceOwner.current === userId && workspaceReadVersion.current === version;
+    const current = () => workspaceOwner.current === userId && workspaceReadVersion.current === version && activeWorkspaceRef.current===scope;
     try {
       const [tasksRes, catsRes, vaultRes, meetRes, danteRes] = await Promise.all([
-        supabase.from('tasks').select('*').order('created_at', { ascending: true }),
-        supabase.from('categories').select('*'),
-        supabase.from('vault_items').select('*').order('added_at', { ascending: false }),
-        supabase.from('meetings').select('*').order('date', { ascending: true }),
-        options.workspaceOnly ? Promise.resolve({ data: [], error: null }) : supabase.from('dante_messages').select('*').order('created_at', { ascending: false }).limit(DANTE_HISTORY_LIMIT),
+        scopeQuery(supabase.from('tasks').select('*'),userId,scope).order('created_at', { ascending: true }),
+        scopeQuery(supabase.from('categories').select('*'),userId,scope),
+        scopeQuery(supabase.from('vault_items').select('*'),userId,scope).order('added_at', { ascending: false }),
+        scopeQuery(supabase.from('meetings').select('*'),userId,scope).order('date', { ascending: true }),
+        options.workspaceOnly ? Promise.resolve({ data: [], error: null }) : scopeQuery(supabase.from('dante_messages').select('*'),userId,scope).order('created_at', { ascending: false }).limit(DANTE_HISTORY_LIMIT),
       ]);
       if (tasksRes.error) throw tasksRes.error;
       if (catsRes.error) throw catsRes.error;
@@ -351,8 +374,8 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       if (danteRes.error) console.warn('dante_messages table missing? Run supabase-schema-update.sql', danteRes.error);
 
       if (!current()) return;
-      let dbCats = catsRes.data || [];
-      if (dbCats.length === 0 && !options.workspaceOnly) {
+      let dbCats = scopeRows(catsRes.data,scope);
+      if (dbCats.length === 0 && !scope && !options.workspaceOnly) {
         const { data: inserted, error } = await supabase
           .from('categories')
           .insert(DEFAULT_CATEGORIES.map(d => ({ label: d.label, color: d.color, slug: d.id, user_id: userId })))
@@ -362,15 +385,16 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       if (!current()) return;
-      const tasks = (tasksRes.data || []).map(mapTask);
+      const tasks = scopeRows(tasksRes.data,scope).map(mapTask);
       setState(s => current() ? read.changes.reduce(mergeWorkspaceChange, {
         ...s,
+        workspaceId:scope,
         tasks,
         completionLog: completionLogFromTasks(tasks),
         categories: dbCats.map(mapCategory),
-        vault: (vaultRes.data || []).map(mapVaultItem),
-        meetings: (meetRes.data || []).map(mapMeeting),
-        danteHistory: options.workspaceOnly ? s.danteHistory : (danteRes.data || []).reverse().map((dm: any) => ({
+        vault: scopeRows(vaultRes.data,scope).map(mapVaultItem),
+        meetings: scopeRows(meetRes.data,scope).map(mapMeeting),
+        danteHistory: options.workspaceOnly ? s.danteHistory : scopeRows(danteRes.data,scope).reverse().map((dm: any) => ({
           role: dm.role,
           content: dm.content,
           ts: new Date(dm.created_at).getTime(),
@@ -385,13 +409,13 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     setLocalImportError(null);
-    if (!user || isOffline || cloudLoadedFor !== user.id || isLoadingData) {
+    if (!user || isOffline || activeWorkspaceId || cloudLoadedFor !== user.id || isLoadingData) {
       setLocalImportOpen(false);
       return;
     }
     try { setLocalImportOpen(shouldOfferLocalImport(localStorage, user.id)); }
     catch { setLocalImportOpen(false); /* malformed or unavailable storage: preserve it */ }
-  }, [user?.id, isOffline, cloudLoadedFor, isLoadingData]);
+  }, [user?.id, isOffline, cloudLoadedFor, isLoadingData,activeWorkspaceId]);
 
   const declineLocalWorkspace = () => {
     if (importRunning.current || !userRef.current || offlineRef.current) return;
@@ -403,6 +427,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const importLocalWorkspace = async () => {
+    if(activeWorkspaceRef.current)throw new Error('Switch to Personal space to import local data.');
     if (importRunning.current || !userRef.current || offlineRef.current) return;
     const userId = userRef.current.id;
     importRunning.current = true;
@@ -458,7 +483,8 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       if (event === 'TOKEN_REFRESHED' && userRef.current?.id === OFFLINE_USER_ID) return;
       if (session) {
         if (workspaceOwner.current !== session.user.id) {
-          setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
+          resetWorkspaceScope();
+          setState(s => ({ ...DEFAULT_STATE,workspaceEpoch:scopeRevision.current, theme: s.theme }));
           setCloudLoadedFor(null);
         }
         workspaceOwner.current = session.user.id;
@@ -473,11 +499,12 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
           }, 0);
         }
       } else if (userRef.current?.id !== OFFLINE_USER_ID) {
+        resetWorkspaceScope();
         workspaceOwner.current = null;
         setCloudLoadedFor(null);
         setUser(null);
         setGoogleProviderSession(null);
-        setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
+        setState(s => ({ ...DEFAULT_STATE,workspaceEpoch:scopeRevision.current, theme: s.theme }));
       }
     });
 
@@ -487,11 +514,13 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     if (!SUPABASE_CONFIGURED || !user || isOffline || cloudLoadedFor !== user.id) return;
     const owner = user.id as string;
+    const scope=activeWorkspaceId;
     let active = true;
     let channel: ReturnType<typeof supabase.channel> | undefined;
-    const current = () => active && workspaceOwner.current === owner && !offlineRef.current;
+    const current = () => active && workspaceOwner.current === owner && activeWorkspaceRef.current===scope && !offlineRef.current;
     const receive = (message: unknown) => {
       if (!current()) return;
+      if(scope){void fetchUserData(owner,{workspaceOnly:true});return;}
       const change = readWorkspaceChange(message, owner);
       if (!change) return;
       const key = `${change.table}:${change.row.id}`;
@@ -505,7 +534,8 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         await supabase.realtime.setAuth();
         if (!current()) return;
-        channel = supabase.channel(workspaceTopic(owner), { config: { private: true } })
+        channel = supabase.channel(scope?`zenos:shared:${scope}`:workspaceTopic(owner), { config: { private: true } })
+          .on('broadcast', { event: 'changed' }, receive)
           .on('broadcast', { event: 'INSERT' }, receive)
           .on('broadcast', { event: 'UPDATE' }, receive)
           .on('broadcast', { event: 'DELETE' }, receive)
@@ -518,12 +548,15 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
           });
       } catch { if (current()) setSyncError(error => error || unavailable); }
     })();
+    const refresh=()=>{if(current())void fetchUserData(owner,{workspaceOnly:true});};
+    window.addEventListener('focus',refresh);
+    const refreshTimer=scope?setInterval(refresh,20000):undefined;
     return () => {
-      active = false;
+      active = false;clearInterval(refreshTimer);window.removeEventListener('focus',refresh);
       deletedWorkspaceRows.current.clear();
       if (channel) void supabase.removeChannel(channel).catch(() => {});
     };
-  }, [user?.id, isOffline, cloudLoadedFor]);
+  }, [user?.id, isOffline, cloudLoadedFor, activeWorkspaceId]);
 
   // Never let the loading screen hang
   useEffect(() => {
@@ -590,6 +623,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logOut = async () => {
+    resetWorkspaceScope();
     ++workspaceSessionGeneration.current;
     workspaceOwner.current = null;
     setCloudLoadedFor(null);
@@ -604,7 +638,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(null);
       setGoogleProviderSession(null);
       setGoogleEvents([]);
-      setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
+      setState(s => ({ ...DEFAULT_STATE,workspaceEpoch:scopeRevision.current, theme: s.theme }));
     }
   };
 
@@ -631,7 +665,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     setGoogleProviderSession(null);
     setGoogleEvents([]);
     setLiveOpen(false);
-    setState(s => ({ ...DEFAULT_STATE, theme: s.theme }));
+    setState(s => ({ ...DEFAULT_STATE,workspaceEpoch:scopeRevision.current, theme: s.theme }));
     if (error) throw new Error('Account deleted, but session cleanup failed. Please reload the page.');
   };
 
@@ -748,15 +782,18 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       });
       return;
     }
-    const { data, error } = await supabase.rpc('save_exam_plan', { p_start_date: today(), p_owner: owner, p_draft: draft, p_sessions: sessions, p_expected: expected ? examSnapshot(expected) : null });
+    const revision=scopeRevision.current;
+    const workspace=activeWorkspaceRef.current;
+    const { data, error } = await supabase.rpc(workspace?'save_workspace_exam_plan':'save_exam_plan', { ...(workspace?{p_workspace:workspace}:{}), p_start_date: today(), p_owner: owner, p_draft: draft, p_sessions: sessions, p_expected: expected ? examSnapshot(expected) : null });
     if (error) throw new Error('Could not save the plan. Refresh and try again; apply the latest database migration if needed.');
-    if (userRef.current?.id !== owner) return;
+    if (userRef.current?.id !== owner || revision!==scopeRevision.current) return;
     setState(s => ({ ...s, tasks: [...s.tasks.filter(t => t.examPlan?.id !== draft.id), ...data.tasks.map(mapTask)], categories: s.categories.some(c => c.id === data.category.id) ? s.categories : [...s.categories, data.category] }));
   };
 
   const addTask = async (taskData: Omit<Task, 'id'>): Promise<Task | null> => {
     if (!userRef.current) return null;
     const ownerId = userRef.current.id;
+    const revision=scopeRevision.current;
     taskData = { ...taskData, postponedCount: 0, recurrence: isRecurrence(taskData.recurrence) ? taskData.recurrence : 'none' };
     if (taskData.recurrence !== 'none' && !calendarDate(taskData.date)) taskData.date = today();
     taskData.recurrenceDay = calendarDate(taskData.date)?.getDate() || null;
@@ -769,7 +806,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       const { data, error } = await supabase
         .from('tasks')
         .insert({
-          user_id: ownerId,
+          user_id: ownerId, workspace_id:activeWorkspaceRef.current,
           title: taskData.title,
           cat: taskData.cat,
           status: taskData.status,
@@ -785,9 +822,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         .select()
         .single();
       if (error) throw error;
-      if (userRef.current?.id !== ownerId) return null;
+      if (userRef.current?.id !== ownerId || revision!==scopeRevision.current) return null;
       const task = mapTask(data);
-      setState(s => insertCloudRow(s, ownerId, 'tasks', data));
+      setState(s => revision===scopeRevision.current ? insertCloudRow(s, ownerId, 'tasks', data) : s);
       return task;
     } catch (err) {
       reportError('Could not save task', err);
@@ -795,16 +832,18 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const reloadCloudTasks = async (userId: string) => {
+  const reloadCloudTasks = async (userId: string,revision=scopeRevision.current) => {
+    if(revision!==scopeRevision.current)return;
+    const scope=activeWorkspaceRef.current;
     const request = ++taskReloadRequest.current;
     const read = { owner: userId, changes: [] as WorkspaceChange[] };
     pendingWorkspaceReads.current.add(read);
-    const current = () => workspaceOwner.current === userId && request === taskReloadRequest.current;
+    const current = () => workspaceOwner.current === userId && request === taskReloadRequest.current && revision===scopeRevision.current;
     try {
-      const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+      const { data, error } = await scopeQuery(supabase.from('tasks').select('*'),userId,scope).order('created_at', { ascending: true });
       if (error) throw error;
       if (!current()) return;
-      const tasks = (data || []).map(mapTask);
+      const tasks = scopeRows(data,scope).map(mapTask);
       setState(s => {
         if (!current()) return s;
         return read.changes.filter(change => change.table === 'tasks').reduce(mergeWorkspaceChange, { ...s, tasks, completionLog: completionLogFromTasks(tasks) });
@@ -814,6 +853,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   const editTask = async (id: number | string, rawUpdates: Partial<Task>) => {
     if (!userRef.current) return;
+    const revision=scopeRevision.current;
     const prev = stateRef.current.tasks.find(t => t.id === id);
     if (!prev) return;
     const updates = { ...rawUpdates };
@@ -840,13 +880,15 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       })).eq('id', id);
       if (error) throw error;
       // The database creates the next occurrence atomically; fetch it with its real ID.
-      await reloadCloudTasks(userId);
+      await reloadCloudTasks(userId,revision);
     } catch (err) { reportError('Could not update task', err); }
   };
 
   const deleteTask = async (id: number | string) => {
     if (!userRef.current) return;
-    const apply = () => setState(s => ({ ...s, tasks: s.tasks.filter(t => t.id !== id) }));
+    if(!(stateRef.current.tasks||[]).some(row=>row.id===id))return;
+    const revision=scopeRevision.current;
+    const apply = () => setState(s => revision===scopeRevision.current ? ({ ...s, tasks: s.tasks.filter(t => t.id !== id) }) : s);
     if (offlineRef.current) return apply();
     try {
       const { error } = await supabase.from('tasks').delete().eq('id', id);
@@ -872,6 +914,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const addCategory = async (label: string, color: string) => {
     if (!userRef.current) return;
     const ownerId = userRef.current.id;
+    const revision=scopeRevision.current;
     if (offlineRef.current) {
       setState(s => ({ ...s, categories: [...s.categories, { id: newId(), label, color }] }));
       return;
@@ -879,11 +922,11 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from('categories')
-        .insert({ user_id: userRef.current.id, label, color, slug: label.toLowerCase().replace(/\s+/g, '-') })
+        .insert({ workspace_id:activeWorkspaceRef.current,user_id: userRef.current.id, label, color, slug: label.toLowerCase().replace(/\s+/g, '-') })
         .select()
         .single();
       if (error) throw error;
-      setState(s => insertCloudRow(s, ownerId, 'categories', data));
+      setState(s => revision===scopeRevision.current ? insertCloudRow(s, ownerId, 'categories', data) : s);
     } catch (err) {
       reportError('Could not save category', err);
     }
@@ -893,6 +936,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const addVaultItem = async (item: Omit<VaultItem, 'id' | 'addedAt'>) => {
     if (!userRef.current) return;
     const ownerId = userRef.current.id;
+    const revision=scopeRevision.current;
     if (offlineRef.current) {
       setState(s => ({ ...s, vault: [{ ...item, id: newId(), addedAt: new Date().toISOString() }, ...s.vault] }));
       return;
@@ -900,11 +944,11 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from('vault_items')
-        .insert({ user_id: userRef.current.id, type: item.type, name: item.name, detail: item.detail, url: item.url || '' })
+        .insert({ workspace_id:activeWorkspaceRef.current,user_id: userRef.current.id, type: item.type, name: item.name, detail: item.detail, url: item.url || '' })
         .select()
         .single();
       if (error) throw error;
-      setState(s => insertCloudRow(s, ownerId, 'vault_items', data));
+      setState(s => revision===scopeRevision.current ? insertCloudRow(s, ownerId, 'vault_items', data) : s);
     } catch (err) {
       reportError('Could not save vault item', err);
     }
@@ -912,7 +956,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   const deleteVaultItem = async (id: string) => {
     if (!userRef.current) return;
-    const apply = () => setState(s => ({ ...s, vault: s.vault.filter(v => v.id !== id) }));
+    if(!(stateRef.current.vault||[]).some(row=>row.id===id))return;
+    const revision=scopeRevision.current;
+    const apply = () => setState(s => revision===scopeRevision.current ? ({ ...s, vault: s.vault.filter(v => v.id !== id) }) : s);
     if (offlineRef.current) return apply();
     try {
       const { error } = await supabase.from('vault_items').delete().eq('id', id);
@@ -927,6 +973,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const addMeeting = async (m: NewMeeting): Promise<Meeting | null> => {
     if (!userRef.current) return null;
     const ownerId = userRef.current.id;
+    const revision=scopeRevision.current;
     if (offlineRef.current) {
       const meeting: Meeting = { ...m, id: newId(), createdAt: new Date().toISOString() };
       setState(s => ({ ...s, meetings: [meeting, ...(s.meetings || [])] }));
@@ -935,13 +982,13 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const { data, error } = await supabase
         .from('meetings')
-        .insert({ ...meetingToRow(m), user_id: ownerId })
+        .insert({ ...meetingToRow(m), user_id: ownerId,workspace_id:activeWorkspaceRef.current })
         .select()
         .single();
       if (error) throw error;
-      if (userRef.current?.id !== ownerId) return null;
+      if (userRef.current?.id !== ownerId || revision!==scopeRevision.current) return null;
       const meeting = mapMeeting(data);
-      setState(s => insertCloudRow(s, ownerId, 'meetings', data));
+      setState(s => revision===scopeRevision.current ? insertCloudRow(s, ownerId, 'meetings', data) : s);
       return meeting;
     } catch (err) {
       reportError('Could not save meeting', err);
@@ -951,6 +998,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   /** persist:false updates the screen only (used by the stopwatch tick); persist on pause/stop. */
   const updateMeeting = async (id: string, updates: Partial<Meeting>, opts: { persist?: boolean } = {}) => {
+    if(!(stateRef.current.meetings||[]).some(m=>m.id===id))return;
     const persist = opts.persist ?? true;
     setState(s => ({ ...s, meetings: (s.meetings || []).map(m => (m.id === id ? { ...m, ...updates } : m)) }));
     if (!persist || offlineRef.current || !userRef.current) return;
@@ -964,7 +1012,9 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   const deleteMeeting = async (id: string) => {
     if (!userRef.current) return;
-    const apply = () => setState(s => ({ ...s, meetings: (s.meetings || []).filter(m => m.id !== id) }));
+    if(!(stateRef.current.meetings||[]).some(row=>row.id===id))return;
+    const revision=scopeRevision.current;
+    const apply = () => setState(s => revision===scopeRevision.current ? ({ ...s, meetings: (s.meetings || []).filter(m => m.id !== id) }) : s);
     if (offlineRef.current) return apply();
     try {
       const { error } = await supabase.from('meetings').delete().eq('id', id);
@@ -977,6 +1027,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
 
   // ---------- Local mode ----------
   const loginOffline = (email?: string, name?: string) => {
+    resetWorkspaceScope();
     ++workspaceSessionGeneration.current;
     workspaceOwner.current = null;
     setCloudLoadedFor(null);
@@ -994,12 +1045,12 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const refreshDanteMemory = useCallback(async () => {
     const owner = userRef.current?.id;
     const request = ++memoryRead.current;
-    if (!owner || offlineRef.current) return;
+    if (!owner || offlineRef.current || activeWorkspaceRef.current) return;
     setMemoryLoading(true);
     try {
       const { data, error } = await supabase.from('dante_memory').select('id,fact,created_at').eq('user_id', owner).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(MEMORY_LIMIT);
       if (error) throw new Error('Memory unavailable');
-      if (request !== memoryRead.current || workspaceOwner.current !== owner || offlineRef.current) return;
+      if (request !== memoryRead.current || workspaceOwner.current !== owner || offlineRef.current || activeWorkspaceRef.current) return;
       const memory = recentMemory(data, MEMORY_LIMIT); memoryRef.current = memory;
       setState(s => ({ ...s, danteMemory: memory })); setMemoryError(null);
     } catch {
@@ -1013,9 +1064,10 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     const refresh = () => { void refreshDanteMemory(); };
     window.addEventListener('focus', refresh);
     return () => { ++memoryRead.current; window.removeEventListener('focus', refresh); };
-  }, [user?.id, isOffline, refreshDanteMemory]);
+  }, [user?.id, isOffline, activeWorkspaceId, refreshDanteMemory]);
 
   const rememberFact = async (rawFact: string): Promise<DanteMemory> => {
+    if(activeWorkspaceRef.current)throw new Error('Dante facts are personal. Switch to Personal space.');
     const fact = validateMemoryFact(rawFact);
     const owner = user?.id;
     if (!owner || userRef.current?.id !== owner || offlineRef.current !== isOffline || workspaceOwner.current !== (isOffline ? null : owner)) throw new Error('Your account changed. Please try again.');
@@ -1039,6 +1091,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     return saved;
   };
   const forgetFact = async (id: string) => {
+    if(activeWorkspaceRef.current)throw new Error('Dante facts are personal. Switch to Personal space.');
     const owner = user?.id;
     if (typeof id !== 'string' || !id || id.length > 64) throw new Error('Invalid memory ID.');
     if (!owner || userRef.current?.id !== owner || offlineRef.current !== isOffline || workspaceOwner.current !== (isOffline ? null : owner)) throw new Error('Your account changed. Please try again.');
@@ -1058,7 +1111,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     const msg: DanteMessage = { role, content, ts: Date.now() };
     setState(s => ({ ...s, danteHistory: [...s.danteHistory, msg].slice(-DANTE_HISTORY_LIMIT) }));
     if (userRef.current && !offlineRef.current) {
-      const { error } = await supabase.from('dante_messages').insert({ user_id: userRef.current.id, role, content });
+      const { error } = await supabase.from('dante_messages').insert({ user_id: userRef.current.id, workspace_id:activeWorkspaceRef.current,role, content });
       if (error) console.error('Failed to save Dante message:', error);
     }
     return msg;
@@ -1067,7 +1120,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
   const clearDanteHistory = async () => {
     setState(s => ({ ...s, danteHistory: [] }));
     if (userRef.current && !offlineRef.current) {
-      const { error } = await supabase.from('dante_messages').delete().eq('user_id', userRef.current.id);
+      const { error } = await (activeWorkspaceRef.current?supabase.from('dante_messages').delete().eq('user_id',userRef.current.id).eq('workspace_id',activeWorkspaceRef.current):supabase.from('dante_messages').delete().eq('user_id',userRef.current.id).is('workspace_id',null));
       if (error) console.error('Failed to clear Dante history:', error);
     }
   };
@@ -1076,6 +1129,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     <ZenosContext.Provider
       value={{
         state,
+        ...shared,activeWorkspaceId,switchWorkspace,
         ...lectures,
         ...semanticSearch,
         ...spaces,
@@ -1107,11 +1161,11 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
         user,
         isOffline,
         accessToken,
-        googleConnected,
+        googleConnected:activeWorkspaceId?false:googleConnected,
         googleCalendarError: googleCalendarError || googleReadError,
         getGoogleAccessToken,
         disconnectGoogleCalendar,
-        googleEvents,
+        googleEvents:activeWorkspaceId?[]:googleEvents,
         setGoogleEvents,
         loadingEvents,
         isLoadingData,

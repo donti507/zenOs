@@ -158,3 +158,15 @@ describe('voice page editing',()=>{
   expect((await runDanteActions([action],deps))[0]).toMatchObject({ok:false,detail:'Save was not confirmed'});
  });
 });
+
+it('stops a Dante action batch if the workspace changes while an earlier edit is saving',async()=>{
+ const deps=setup();deps.stateRef.current.workspaceId='team';deps.stateRef.current.workspaceEpoch=1;
+ deps.addTask=vi.fn(async task=>{deps.stateRef.current={...deps.stateRef.current,workspaceId:null,workspaceEpoch:2};return {...task,id:'first'};});
+ const result=await runDanteActions([{action:'create_task',data:{title:'First'}},{action:'create_task',data:{title:'Second'}}],deps);
+ expect(result).toHaveLength(1);expect(deps.addTask).toHaveBeenCalledTimes(1);
+});
+it('does not let shared Dante change personal facts or My Space pages',async()=>{
+ const deps=setup();deps.stateRef.current.workspaceId='team';deps.rememberFact=vi.fn();deps.forgetFact=vi.fn();deps.editSpacePageFromVoice=vi.fn();
+ const result=await runDanteActions([{action:'remember',data:{fact:'Secret'}},{action:'forget',data:{id:'fact'}},{action:'edit_space_page',data:{instruction:'change it'}}],deps);
+ expect(result.every(row=>!row.ok)).toBe(true);expect(deps.rememberFact).not.toHaveBeenCalled();expect(deps.forgetFact).not.toHaveBeenCalled();expect(deps.editSpacePageFromVoice).not.toHaveBeenCalled();
+});

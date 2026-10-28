@@ -42,6 +42,7 @@ const fields = {
   lecture: "id,user_id,title,summary",
 };
 function sourceDocument(type: SearchType, item: any): SearchSource | null {
+  if(item?.workspace_id)return null;
   let title = "",
     content = "";
   if (type === "task" && item.note?.trim()) {
@@ -141,7 +142,7 @@ function databaseSearchStore(
     async source(type, id) {
       const { data, error } = await client
         .from(tables[type])
-        .select(fields[type])
+        .select(type==='lecture'?fields[type]:fields[type]+',workspace_id')
         .eq("user_id", owner)
         .eq("id", id)
         .maybeSingle();

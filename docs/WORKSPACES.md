@@ -1,0 +1,31 @@
+# Shared workspaces
+
+## Deploy
+
+1. Merge this feature, then run the **complete** `supabase-schema-update.sql` in Supabase SQL Editor before deploying. Existing rows remain personal (`workspace_id IS NULL`); nothing is moved or published. The migration is idempotent. Keep existing Supabase authentication configured; there are no new environment variables or paid services.
+2. For live updates, enable authenticated private Realtime channels as in `docs/REALTIME.md`. The migration installs shared-topic authorization and invalidation publishers. If managed `realtime.messages` ownership prevents policy installation, ask the project administrator to apply that block with an authorized role; the migration reports a warning and continues. Membership, RLS and explicit/focus/20-second refreshes still work.
+3. Deploy ZEN OS. Sign in, open **Workspaces** (sidebar, or the people button next to the mobile workspace selector), and create a workspace. Personal space is always the default on sign-in/reload. Use the selector to switch.
+
+## Invitations and roles
+
+The creator is the owner; invited accounts are members. Only owners can create/revoke invitations or remove other members. Members can leave, but the owner cannot leave or promote someone by editing membership rows. Both roles can create, edit and delete shared tasks, categories, meetings and vault items. There is no public workspace discovery. Owners may create up to 20 workspaces, with up to 100 members and 100 pending invitations per workspace.
+
+Choose a workspace and enter an email in **Workspaces → Invite email → Create invite link**. Copy the link or choose **Open email app** to send it yourself. This flow does **not** automatically send email or require an SMTP integration. Recipients open the link, sign in/sign up with that email and verify it, then explicitly accept. ZEN OS sign-in keeps the `/workspaces#invite=…` destination. An account with another email cannot redeem it, including one with a forged profile name/email.
+
+Links are random 64-character capabilities, hash-only in the database, expire after seven days and are single-use (same-account retries are idempotent while membership remains). The token is in a URL fragment, not the server URL/query; treat links as private. New invitations to the same email revoke old pending links. Owners can revoke pending invitations after reloading; raw links cannot be recovered, so create a new one if lost. Removing a member also invalidates their accepted invitation so it cannot rejoin them. Members see user IDs/roles, not each other's private email addresses; invitation email/hashes are owner-only. Sign-in and invitation acceptance are separate steps.
+
+## Data boundaries
+
+The four shared tables retain their creator `user_id` and add nullable `workspace_id` foreign keys. Personal rows require their owner; shared rows require current membership, including for their creator after removal. Authenticated inserts always use the verified user's ID; ordinary updates cannot move a row or change its creator. RLS protects all operations, not only the sidebar filter. Membership/owner checks use small hardened SECURITY DEFINER helpers to avoid recursive RLS; transactional RPCs are the only browser write path to workspaces, memberships and invitations. Verified email is read from `auth.users`, never the request or user metadata.
+
+The selector clears selected collections immediately, reloads only the selected scope and rejects late snapshots/mutation responses. Private Realtime shared channels carry **invalidation only**, never row contents, because an already-connected removed member could still have a channel lease. Each refresh rechecks membership RLS. Membership lists refresh on focus and every 20 seconds; removal switches the UI back to Personal. Already downloaded content cannot be recalled. No shared channels, membership calls or workspace writes run in local/demo mode; existing local storage is unchanged and is imported only into Personal.
+
+Recurring successors and atomic exam plans retain workspace scope. Dante histories remain private per user **and** scope; members do not see each other's chats. Switching/removal stops the current text/Live turn and drops late edits. Shared Dante requests verify membership using the actual bearer token, load canonical workspace rows on the server and discard client-provided task lists, personal facts, Google events, statistics and retrieval data. Actions operate through the current scoped context only. Personal memory actions and My Space editing are unavailable in shared Dante. Shared note search is text search over the current loaded workspace; private semantic retrieval is never mixed into it. Large workspaces are subject to existing UI/database and prompt limits (server Dante context: 150 tasks and 50 items per other table).
+
+Lectures, My Space pages, Google Calendar, billing, weekly recaps and personal memory are not shared. Lectures/My Space require returning to Personal; Home hides personal recap/widgets in a shared workspace, and existing My Space bridge permissions never expose shared workspace data. Personal semantic indexing excludes shared notes. Personal server recaps and Focus Room completion streaks count personal tasks only.
+
+Account export includes owned workspaces, the user's memberships/invitations and their created rows. Existing auth deletion cascades remove the owner's workspaces and all workspace data/members/invitations. Deleting a member's account deletes rows they created, consistent with existing creator foreign keys. Review/export shared work before deleting an account; no ownership transfer/archive UI is provided.
+
+## Verification
+
+Run `npm run typecheck`, `npm test`, `npm run build`. SQL tests apply the migration twice and cover RLS, role escalation, canonical verified email, expiry/revocation/replay, peer edits, scoped recurrence, private invalidations and cascades. Server tests reject unverified scopes and personal-data injection into shared Dante; context tests cover personal defaults, switching, late mutation results, invalidation deduplication, member removal and local mode. Test with two real Supabase accounts before production rollout; local fixtures do not verify your project's SMTP, OAuth redirects or hosted Realtime configuration.

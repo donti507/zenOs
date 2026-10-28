@@ -16,7 +16,7 @@ export default function SpaceFrame({ snapshot, widgetSize, publicPreview = false
   const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const [reload, setReload] = useState(0);
   const [blocked, setBlocked] = useState(false);
-  const identity = `${publicPreview}:${user?.id}:${snapshot.page.id}:${snapshot.version.id}:${snapshot.page.updatedAt}:${snapshot.page.permissions.tasks}:${snapshot.page.permissions.events}:${state.theme}:${reload}`;
+  const identity = `${state.workspaceId}:${publicPreview}:${user?.id}:${snapshot.page.id}:${snapshot.version.id}:${snapshot.page.updatedAt}:${snapshot.page.permissions.tasks}:${snapshot.page.permissions.events}:${state.theme}:${reload}`;
   const token = useMemo(() => crypto.randomUUID(), [identity]);
   const doc = useMemo(
     () => spaceSrcdoc(snapshot.version, token, state.theme === "dark"),
@@ -62,7 +62,7 @@ export default function SpaceFrame({ snapshot, widgetSize, publicPreview = false
       if (now - lastRequest.current.at > 1000)
         lastRequest.current = { at: now, count: 0 };
       const allowed =
-        !publicPreview && active.snapshot.page.permissions[method as "tasks" | "events"];
+        !publicPreview && !stateRef.current.workspaceId && active.snapshot.page.permissions[method as "tasks" | "events"];
       if (++lastRequest.current.count > 10 || !allowed) {
         port.postMessage({
           ok: false,
@@ -81,6 +81,7 @@ export default function SpaceFrame({ snapshot, widgetSize, publicPreview = false
           method,
         );
         if (
+          !!stateRef.current.workspaceId ||
           current.current.token !== active.token ||
           loadEpoch.current !== activeEpoch ||
           !verified.current ||

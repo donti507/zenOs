@@ -9,7 +9,7 @@ vi.mock('../../lib/supabase',()=>({SUPABASE_CONFIGURED:true,supabase:{
  realtime:{setAuth:async()=>{}},channel:()=>{const channel={on:()=>channel,subscribe:()=>channel};return channel;},removeChannel:async()=>{},
  rpc:(...args:any[])=>mock.rpc(...args),
  from:(table:string)=>{
-  let operation='read';const filters:any[]=[];const chain:any={select:()=>chain,order:()=>chain,limit:()=>chain,eq:(key:string,value:any)=>{filters.push([key,value]);return chain;},delete:()=>{operation='delete';return chain;},
+  let operation='read';const filters:any[]=[];const chain:any={select:()=>chain,is:()=>chain,order:()=>chain,limit:()=>chain,eq:(key:string,value:any)=>{filters.push([key,value]);return chain;},delete:()=>{operation='delete';return chain;},
    then:(resolve:any,reject:any)=>{
     if(table!=='dante_memory')return Promise.resolve({data:table==='categories'?[{id:'work',label:'Work'}]:[],error:null}).then(resolve,reject);
     const rows=structuredClone(mock.memories.filter(row=>filters.every(([key,value])=>row[key]===value)));
