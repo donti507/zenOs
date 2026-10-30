@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export const ACCOUNT_TABLES = ['workspaces','workspace_members','workspace_invites','tasks', 'categories', 'meetings', 'vault_items', 'dante_messages', 'dante_memory', 'lectures', 'space_pages', 'space_page_versions', 'space_arena_rounds', 'space_gallery_pages', 'space_gallery_reports', 'space_challenges', 'space_challenge_entries', 'space_challenge_votes', 'space_badges', 'space_activity_days', 'focus_rooms', 'focus_room_members', 'focus_room_sessions', 'weekly_recaps', 'weekly_recap_preferences'] as const;
+export const ACCOUNT_TABLES = ['usos_accounts','workspaces','workspace_members','workspace_invites','tasks', 'categories', 'meetings', 'vault_items', 'dante_messages', 'dante_memory', 'lectures', 'space_pages', 'space_page_versions', 'space_arena_rounds', 'space_gallery_pages', 'space_gallery_reports', 'space_challenges', 'space_challenge_entries', 'space_challenge_votes', 'space_badges', 'space_activity_days', 'focus_rooms', 'focus_room_members', 'focus_room_sessions', 'weekly_recaps', 'weekly_recap_preferences'] as const;
 
 /** Read fresh, complete data rather than the UI's truncated chat history. */
 export async function exportAccountData(client: SupabaseClient, userId: string) {
@@ -9,10 +9,11 @@ export async function exportAccountData(client: SupabaseClient, userId: string) 
     const rows: Record<string, unknown>[] = [];
     const pageSize = 500;
     for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await client.from(table).select('*').eq('user_id', userId)
+      const { data, error } = await client.from(table).select(table==='usos_accounts'?'id,user_id,usos_user_id,created_at':'*').eq('user_id', userId)
         .order('id', { ascending: true }).range(offset, offset + pageSize - 1);
       if (error) throw new Error(`Could not export ${table}: ${error.message}`);
-      rows.push(...(data || []));
+      const page = (data || []) as unknown as Record<string, unknown>[];
+      rows.push(...(table==='usos_accounts'?page.map(row=>({id:row.id,user_id:row.user_id,usos_user_id:row.usos_user_id,created_at:row.created_at})):page));
       if (!data || data.length < pageSize) break;
     }
     return [table, rows] as const;

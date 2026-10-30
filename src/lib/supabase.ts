@@ -50,6 +50,8 @@ export const supabase = createClient(
   SUPABASE_CONFIGURED ? rawKey : 'placeholder-anon-key-not-configured',
   {
     auth: {
+      // USOS fragments are verified explicitly after the browser-bound server handoff.
+      detectSessionInUrl:typeof window==='undefined'||!/^\/auth\/usos\/?$/.test(window.location.pathname),
       persistSession: true,
       autoRefreshToken: true,
       storage: getResilientStorage(),

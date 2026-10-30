@@ -1873,3 +1873,42 @@ BEGIN
  IF p_automatic THEN UPDATE public.weekly_recap_preferences SET next_due_at=((ending+7)+time '18:00') AT TIME ZONE pref.time_zone WHERE user_id=p_user_id; END IF;
  RETURN to_jsonb(saved)-'user_id';
 END $$;
+
+-- USOS OAuth accounts. Token ciphertext is service-role-only, even for the owner.
+CREATE TABLE IF NOT EXISTS public.usos_accounts (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ usos_user_id text NOT NULL UNIQUE CHECK(char_length(usos_user_id) BETWEEN 1 AND 80),
+ user_id uuid NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+ usos_base_url text NOT NULL,
+ usos_access_token text NOT NULL CHECK(usos_access_token ~ '^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$'),
+ usos_access_secret text NOT NULL CHECK(usos_access_secret ~ '^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]+$'),
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.usos_accounts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.usos_accounts FROM PUBLIC,anon,authenticated;
+REVOKE SELECT(usos_access_token,usos_access_secret,usos_base_url) ON public.usos_accounts FROM PUBLIC,anon,authenticated;
+GRANT SELECT(id,user_id,usos_user_id,created_at) ON public.usos_accounts TO authenticated;
+GRANT SELECT,INSERT,UPDATE,DELETE ON public.usos_accounts TO service_role;
+DROP POLICY IF EXISTS usos_accounts_own ON public.usos_accounts;
+CREATE POLICY usos_accounts_own ON public.usos_accounts FOR SELECT TO authenticated USING(auth.uid()=user_id);
+
+CREATE OR REPLACE FUNCTION public.find_usos_email_owner(p_email text)
+RETURNS TABLE(id uuid,email text,confirmed boolean) LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT u.id,to_jsonb(u)->>'email',coalesce(to_jsonb(u)->>'email_confirmed_at',to_jsonb(u)->>'confirmed_at','')<>''
+ FROM auth.users u WHERE lower(to_jsonb(u)->>'email')=lower(btrim(p_email)) LIMIT 2;
+$$;
+REVOKE ALL ON FUNCTION public.find_usos_email_owner(text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.find_usos_email_owner(text) TO service_role;
+
+-- Never reassign a linked identity or replace another identity on an app account.
+CREATE OR REPLACE FUNCTION public.save_usos_account(p_usos_id text,p_user_id uuid,p_base text,p_token text,p_secret text)
+RETURNS void LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+ INSERT INTO public.usos_accounts(usos_user_id,user_id,usos_base_url,usos_access_token,usos_access_secret)
+ VALUES(p_usos_id,p_user_id,p_base,p_token,p_secret)
+ ON CONFLICT(usos_user_id) DO UPDATE SET usos_access_token=excluded.usos_access_token,usos_access_secret=excluded.usos_access_secret
+ WHERE usos_accounts.user_id=p_user_id AND usos_accounts.usos_base_url=p_base;
+ IF NOT FOUND THEN RAISE EXCEPTION 'USOS identity already linked'; END IF;
+END $$;
+REVOKE ALL ON FUNCTION public.save_usos_account(text,uuid,text,text,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.save_usos_account(text,uuid,text,text,text) TO service_role;

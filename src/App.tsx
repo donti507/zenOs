@@ -9,6 +9,7 @@ import DanteOrb from './components/DanteOrb';
 import { today } from './lib/utils';
 import { BILLING_ROUTES } from './lib/routes';
 
+const UsosReturn=lazy(()=>import('./pages/UsosReturn'));
 const BillingReturn = lazy(() => import('./pages/BillingReturn'));
 const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
@@ -48,6 +49,8 @@ export function AppRoutes() {
   // Public pages, visible without signing in
   if (pathname === '/privacy' || pathname === '/terms') return <Legal page={pathname === '/privacy' ? 'privacy' : 'terms'} />;
 
+  if (/^\/auth\/usos\/?$/.test(pathname)) return <Suspense fallback={<PageLoader />}><UsosReturn /></Suspense>;
+  if(new URLSearchParams(routeSearch).has('usos_error'))return <Suspense fallback={<PageLoader />}><Login /></Suspense>;
   if (passwordRecovery) return <Suspense fallback={<PageLoader />}><Login initialView="reset-password" onRecovered={() => setPasswordRecovery(false)} /></Suspense>;
   if (pathname === '/gallery/challenges' || pathname.startsWith('/gallery/challenges/')) return <Suspense fallback={<PageLoader />}><div key={`${user?.id||'public'}:${isOffline}:${pathname}`}><Challenges /></div></Suspense>;
   if (pathname === '/gallery' || pathname.startsWith('/gallery/')) return <Suspense fallback={<PageLoader />}><div key={`${user?.id||'public'}:${isOffline}:${pathname}:${routeSearch}`}><Gallery /></div></Suspense>;
