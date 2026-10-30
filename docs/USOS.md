@@ -53,3 +53,27 @@ Denial, expired/reused requests, provider failures and linking conflicts return 
 ## Verification
 
 Run `npm run typecheck`, `npm test`, and `npm run build`. Tests mock USOS and Supabase administration, verify a published OAuth signature vector, AES-GCM tamper rejection, browser binding/expiry/replay, email-linking rules, safe fragment completion, account export and SQL column/RLS isolation. Real deployment validation requires your institution's approved consumer and a test account.
+
+## Troubleshooting on Render Free (no Shell needed)
+
+After deploying the diagnostic update, open **Render → your Zenos service → Logs**. Leave the logs open, click **Log in with USOS** once, then filter/search for `[USOS]`. Copy only the `[USOS]` diagnostic line when requesting help. No new environment variable or migration is needed for diagnostics.
+
+Example (illustrative, not a diagnosis of your deployment):
+
+```text
+[USOS] {"stage":"request_token","reason":"http_error","httpStatus":401}
+```
+
+| Diagnostic | Next check |
+| --- | --- |
+| `request_token` + `http_error`, status 401/403 | Confirm the key/secret belong to the configured institution environment; ask the university about consumer activation, callback registration and scopes. These status codes alone do not prove the precise cause. |
+| `http_error`, status 404 | Verify the university API base URL. |
+| `http_error`, status 5xx | Provider/server availability; retry later or contact the institution. |
+| `dns_error` / `connection_error` / `timeout` | Institution reachability from Render, DNS, firewall/IP restrictions or provider availability. |
+| `tls_error` | Institution TLS certificate/trust configuration. Do not disable certificate verification. |
+| `callback_not_confirmed` / `invalid_response` | The provider did not return the required OAuth response; verify registration and OAuth 1.0a compatibility with the institution. |
+| `identity_lookup` / `email_lookup` / `account_lookup` / `account_save` / `magic_link` + `dependency_error` | Check the complete migration, server Supabase credentials and Supabase Auth redirect/email settings. |
+
+Diagnostics contain only a fixed stage/reason and optional numeric upstream HTTP status. They exclude keys, URLs, signatures, request/response bodies, headers, OAuth state/verifiers, token hashes, user IDs, email addresses and stack traces. Expected consent denial, expiry, CSRF rejection and rate limiting are not logged. The browser still receives only the existing friendly error.
+
+For PWr training credentials, use `USOS_BASE_URL=https://apps.usos-szkol.pwr.edu.pl/`; production credentials and accounts may differ. Do not change the callback from `https://zenose.tech/api/auth/usos/callback` merely because the provider uses a training domain.

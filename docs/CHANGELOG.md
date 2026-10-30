@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-10-30: Added secret-free USOS failure diagnostics with fixed stages, network categories and upstream HTTP status, regression tests and Render Free Logs troubleshooting; no migration or new variables. (Codex)
+
 - 2026-10-30: Added optional English/Polish USOS university login and explicit account connection, signed OAuth 1.0a browser-bound single-use flows, encrypted service-only credentials with safe export/RLS, callback and linking regression tests and setup documentation; apply the migration and configure server-only USOS variables. (Codex)
 
 - 2026-10-28: Added English/Polish interface selection with browser preference/persistence, localized public/app controls, dates and counts, Dante prompts/voice/recap copy, safe authored-content boundaries and live draft-preservation/catalogue tests; no new migration. (Codex)
