@@ -1,3 +1,4 @@
+import UsosAccountControls from './UsosAccountControls';
 import {tr,useUiLanguage} from '../i18n';
 import BuildBadges from './BuildBadges';
 import { useRef, useState } from 'react';
@@ -31,6 +32,7 @@ export default function AccountControls() {
   const close = () => { if (!running.current) { setConfirm(false); setError(''); } };
   return <>
     <BuildBadges badges={buildBadges} />
+    <UsosAccountControls />
     {billing?.enabled && <>
       <button role="menuitem" disabled={!!busy} className="w-full px-3 py-2 text-left text-primary hover:bg-surface-container disabled:opacity-50 cursor-pointer" onClick={() => run(billing.plan === 'pro' ? 'portal' : 'checkout')}>
         {busy === 'checkout' || busy === 'portal' ? tr("Opening billing…") : billing.plan === 'pro' ? tr("Manage subscription") : tr("Upgrade to Pro")}

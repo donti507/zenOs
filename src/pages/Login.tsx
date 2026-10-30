@@ -1,3 +1,5 @@
+import {useLocation,Link} from 'react-router-dom';
+import {usosError} from '../../shared/usos';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import {tr,useUiLanguage} from '../i18n';
 import { FormEvent, useMemo, useState } from 'react';
@@ -27,7 +29,8 @@ const TITLES: Record<AuthView, { title: string; sub: string }> = {
 
 export default function Login({ initialView = 'login', onRecovered }: { initialView?: AuthView; onRecovered?: () => void }) {
   useUiLanguage();
-  const { loginWithGoogle, loginOffline } = useZenos();
+  const { loginWithGoogle, loginOffline,usosEnabled,loginWithUsos,user } = useZenos();
+  const route=useLocation();const usosCode=new URLSearchParams(route.search).get('usos_error');
   const reduce = useReducedMotion();
   const [view, setView] = useState<AuthView>(initialView);
   const [fullName, setFullName] = useState('');
@@ -148,6 +151,7 @@ export default function Login({ initialView = 'login', onRecovered }: { initialV
                 <h1 className="text-[28px] leading-9 font-semibold tracking-tight text-on-surface">{TITLES[view].title}</h1>
                 <p className="text-on-surface-variant mt-1 mb-6">{tr(TITLES[view].sub)}</p>
 
+                {usosCode&&<div role="alert" className="mb-4 p-3 rounded-lg bg-error-container text-error text-sm space-y-2"><p>{tr(usosError(usosCode))}</p>{user&&<Link to="/" replace className="underline">{tr('Back to ZEN OS')}</Link>}</div>}
                 {error && <div className="mb-4 p-3 rounded-lg bg-error-container text-error text-[13px] flex gap-2" role="alert"><Icon name="error" className="text-[18px]" />{tr(error)}</div>}
                 {success && <div className="mb-4 p-3 rounded-lg bg-success-container text-success text-[13px] flex gap-2" role="status"><Icon name="check_circle" className="text-[18px]" />{tr(success)}</div>}
 
@@ -207,6 +211,7 @@ export default function Login({ initialView = 'login', onRecovered }: { initialV
                         <button className={`${btn.secondary} h-11 ring-1 ring-outline-variant bg-surface-container-lowest`} onClick={google} disabled={loading}>
                           <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>{tr("Continue with Google")}</button>
                       )}
+                      {usosEnabled&&<button className={`${btn.secondary} min-h-11 ring-1 ring-outline-variant border-l-4 border-l-primary bg-surface-container-lowest`} disabled={loading} onClick={()=>run(async()=>{loginWithUsos();})}><Icon name="school" className="text-[20px] text-primary"/>{tr('Log in with USOS')}</button>}
                       <button className={`${btn.ghost} h-11`} onClick={() => loginOffline('demo@zenos.local', 'Demo')}>
                         <Icon name="science" className="text-[18px]" />{tr("Try the demo without an account")}</button>
                     </div>

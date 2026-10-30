@@ -1,3 +1,4 @@
+import {createUsos} from './server/usos';
 import {createWorkspaceContextReader} from './server/workspaces';
 import { createTts } from './server/tts';
 import { createWeeklyRecaps } from './server/weeklyRecaps';
@@ -38,6 +39,11 @@ async function startServer() {
   const daily = createDailyUsage({ isPro: billing.isPro, key: process.env.SUPABASE_SERVICE_ROLE_KEY, url: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL, limit: process.env.DANTE_DAILY_LIMIT });
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+  const usos=createUsos();
+  app.use('/api/auth/usos',usos.noStore);
+  app.use('/auth/usos',usos.noStore);
+  app.get('/api/auth/usos/start',usos.start);
+  app.get('/api/auth/usos/callback',usos.callback);
   const lectures = createLectures();
   app.post('/api/lectures/prepare', requireUser, rateLimit, lectures.prepare);
   app.post('/api/lectures/:id/transcribe/:index', requireUser, lectures.useJob, lectures.cachedChunk, rateLimit, daily.count('transcriptions'), lectures.chunk);
@@ -45,6 +51,10 @@ async function startServer() {
   app.delete('/api/lectures/:id', requireUser, lectures.useJob, lectures.cancel);
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   app.use(express.json({ limit: '512kb' }));
+  app.post('/api/auth/usos/connect',usos.connect);
+  app.post('/api/auth/usos/complete',usos.complete);
+  app.get('/api/auth/usos/account',usos.account);
+  app.delete('/api/auth/usos/account',usos.disconnect);
 
   const weeklyRecaps=createWeeklyRecaps();
   weeklyRecaps.startWorker();
@@ -121,6 +131,7 @@ async function startServer() {
       authRequired: !ALLOW_ANONYMOUS,
       stt: STT_READY,
       tts: tts.enabled,
+      usos: usos.enabled,
     });
   });
 
@@ -227,7 +238,7 @@ async function startServer() {
     app.get('*', (req, res) => {
       // A missing JS/CSS file must be a 404, not index.html (avoids "MIME type text/html" errors after a deploy)
       if (req.path.startsWith('/assets/') || /\.[a-z0-9]{2,5}$/i.test(req.path)) return res.status(404).end();
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Cache-Control', /^\/auth\/usos\/?$/.test(req.path)?'no-store':'no-cache');
       res.type('html').send(indexHtml);
     });
   }

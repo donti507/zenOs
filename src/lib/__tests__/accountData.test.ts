@@ -3,11 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { ACCOUNT_TABLES, exportAccountData, deleteAccountData, downloadAccountData } from '../accountData';
 
 function fakeClient(failTable?: string) {
-  const queries: { table: string; userId?: string; offset?: number }[] = [];
+  const queries: { table: string; userId?: string; offset?: number; columns?: string }[] = [];
   const from = vi.fn((table: string) => {
     const query = { table } as typeof queries[number];
     const chain = {
-      select: vi.fn(() => chain),
+      select: vi.fn((columns: string) => { query.columns = columns; return chain; }),
       eq: vi.fn((column: string, id: string) => { expect(column).toBe('user_id'); query.userId = id; return chain; }),
       order: vi.fn((column: string) => { expect(column).toBe('id'); return chain; }),
       range: vi.fn(async (start: number, end: number) => {
@@ -16,7 +16,7 @@ function fakeClient(failTable?: string) {
         if (table === failTable) return { data: null, error: { message: 'access denied' } };
         // More than one server page, and far more than the 40-message UI limit.
         const count = table === 'dante_messages' ? (start === 0 ? 500 : 23) : 1;
-        return { data: Array.from({ length: count }, (_, i) => ({ id: start + i, user_id: query.userId })), error: null };
+        return { data: Array.from({ length: count }, (_, i) => ({ id: start + i, user_id: query.userId, ...(table === 'usos_accounts' ? { usos_user_id: '123', created_at: '2026-10-30', usos_access_token: 'never-export', usos_access_secret: 'never-export-secret' } : {}) })), error: null };
       }),
     };
     return chain;
@@ -34,6 +34,13 @@ describe('account data', () => {
     expect(queries.every(q => q.userId === 'user-a')).toBe(true);
     expect(queries.filter(q => q.table === 'dante_messages').map(q => q.offset)).toEqual([0, 500]);
     expect(result.version).toBe(1);
+  });
+  it('selects only safe USOS columns and never exports credentials', async () => {
+    const { client, queries } = fakeClient();
+    const result = await exportAccountData(client, 'user-a');
+    expect(queries.find(query => query.table === 'usos_accounts')?.columns).toBe('id,user_id,usos_user_id,created_at');
+    expect((result as any).usos_accounts).toEqual([{ id: 0, user_id: 'user-a', usos_user_id: '123', created_at: '2026-10-30' }]);
+    expect(JSON.stringify(result)).not.toContain('never-export');
   });
   it('rejects a partial export when any table fails', async () => {
     await expect(exportAccountData(fakeClient('meetings').client, 'user-a')).rejects.toThrow('Could not export meetings: access denied');
