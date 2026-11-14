@@ -13,6 +13,7 @@ export default defineConfig(() => {
             if (!id.includes('/node_modules/')) return;
             if (/\/node_modules\/(react|react-dom|scheduler|react-router|react-router-dom)\//.test(id)) return 'vendor-react';
             if (/\/node_modules\/(motion|framer-motion|motion-dom|motion-utils)\//.test(id)) return 'vendor-motion';
+            if (id.includes('/node_modules/phaser/')) return 'vendor-phaser';
             if (id.includes('/node_modules/@supabase/')) return 'vendor-supabase';
           },
         },

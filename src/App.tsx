@@ -15,6 +15,8 @@ const Landing = lazy(() => import('./pages/Landing'));
 const Login = lazy(() => import('./pages/Login'));
 
 // Each page is its own chunk and only loads when opened
+const Adventures=lazy(()=>import('./pages/Adventures'));
+const AdventurePlay=lazy(()=>import('./pages/AdventurePlay'));
 const Workspaces=lazy(()=>import('./pages/Workspaces'));
 const Home = lazy(() => import('./pages/Home'));
 const Tasks = lazy(() => import('./pages/Tasks'));
@@ -73,6 +75,8 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route index element={<Home />} />
         <Route path="workspaces" element={<Workspaces />} />
+        <Route path="adventures" element={<Adventures />} />
+        <Route path="adventures/:id" element={<AdventurePlay />} />
         <Route path="tasks" element={<Tasks />} />
         <Route path="board" element={<Kanban />} />
         <Route path="calendar" element={<Calendar />} />

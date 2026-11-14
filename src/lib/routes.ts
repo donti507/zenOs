@@ -10,6 +10,7 @@ export const ROUTES = [
   { view: 'gallery', path: '/gallery', get label(){return tr('Gallery');}, icon: 'public' },
   { view: 'space', path: '/space', get label(){return tr('My Space');}, icon: 'dashboard_customize' },
   { view: 'search', path: '/search', get label(){return tr('Search');}, icon: 'search' },
+  {view:'adventures',path:'/adventures',get label(){return tr('Adventures');},icon:'explore'},
   { view: 'lectures', path: '/lectures', get label(){return tr('Lectures');}, icon: 'school' },
   { view: 'meetings', path: '/meetings', get label(){return tr('Meetings');}, icon: 'videocam' },
   { view: 'analytics', path: '/analytics', get label(){return tr('Analytics');}, icon: 'monitoring' },
