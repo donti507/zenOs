@@ -16,6 +16,7 @@ const NAV = [
   { to: '/gallery', get label(){return tr("Gallery");}, icon: 'public' },
   { to: '/space', get label(){return tr("My Space");}, icon: 'dashboard_customize' },
   { to: '/search', get label(){return tr("Search");}, icon: 'search' },
+  { to: '/adventures', get label(){return tr('Adventures');}, icon: 'explore' },
   { to: '/lectures', get label(){return tr("Lectures");}, icon: 'school' },
   { to: '/meetings', get label(){return tr("Meetings");}, icon: 'videocam' },
   { to: '/analytics', get label(){return tr("Analytics");}, icon: 'monitoring' },

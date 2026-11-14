@@ -2,6 +2,12 @@
 
 Turn a lecture into a short, playable 2.5D isometric adventure. Students walk around, talk to NPCs and solve puzzles that are built from the lecture's own concepts. This document is the plan every agent follows (tasks G1–G8). Keep it updated when the design changes.
 
+## Implementation status — 14 November 2026
+
+**G1 is implemented.** `/adventures` lists the hand-written sample; `/adventures/lost-binary-kingdom` opens an explorable isometric village. Both signed-in and local/demo users can play. Sidebar and horizontally scrollable mobile navigation expose Adventures. This is explicitly an **exploration preview**: quests, puzzle interaction, generation, scoring, server verification, persistent progress and lecture/PDF uploads are later stages, not represented as working features.
+
+No database migration, new environment variables or external service is required for this slice. The three sample mission specs describe future puzzles; their correct-answer keys are not included in the client sample. The list and game settings are exposed through ZenosContext's `useAdventures` hook; bounded display preferences use `zenos_adventure_settings_v1` in browser storage and tolerate blocked storage. Positions remain cosmetic, in-memory and reset on leaving the play page; changing render settings preserves the current position.
+
 ## Principles
 1. **AI writes data, never code.** The LLM produces a JSON game spec. The engine only interprets known fields with reusable mechanics. Nothing in a spec is ever executed.
 2. **Untrusted in, validated out.** Lecture text and model output are untrusted. Every spec passes the zod schema before it is stored or played.
@@ -52,7 +58,22 @@ src/game/
 src/pages/Adventures.tsx, AdventurePlay.tsx
 server/adventures.ts, server/adventureGen.ts, server/adventureVerify.ts
 ```
-Pure logic (quests, unlocks, mechanic validation, mastery) lives outside Phaser so it is unit-tested with Vitest.
+Implemented G1 modules:
+- `src/game/spec.ts`: Zod 4 strict v1 schema and 64 KiB input boundary; reject unsupported versions before play, unknown fields at every level, HTML/control characters, duplicate/reserved IDs, invalid references/slots and prerequisite cycles. Arrays/text are bounded; choices and match sides are checked.
+- `src/game/samples/lost-binary-kingdom.ts`: validated, hand-written public data with three mission types, two named NPCs, objectives and sample source quotes. No URLs, scripts or answer keys.
+- `src/game/templates/village.ts`: approved 15×15 isometric template, spawn, NPC/gate slots and solid building/boundary footprints. Collision checks use a foot radius; screen/grid conversion and wall sliding are pure functions.
+- `src/game/runtime.ts`: validates before dynamically importing the engine; aborted page loads cannot start a game.
+- `src/game/engine/boot.ts`: Phaser scene, code-owned Tiled JSON tilemap, CC0 local textures, depth-sorted world objects, original eight-direction/three-frame explorer art, camera follow, bounded rendering and resize lifecycle. `player.ts` creates original sprite frames; `input.ts` binds keyboard input only to the focused viewport.
+- `src/game/AdventureViewport.tsx` and `TouchJoystick.tsx`: accessible DOM controls, on-screen pointer-captured joystick, pause/settings portal and lifecycle cleanup. The viewport has a keyboard focus indicator and instructions. NPC labels and sample objectives are rendered as plain text, never HTML.
+- `src/pages/Adventures.tsx` and `AdventurePlay.tsx`: lazy list/play routes, safe unknown-ID state and semantic sample overview.
+
+Phaser lives in its own `vendor-phaser` dynamic chunk and is requested only after a valid play-page spec loads; the list, Home and existing pages do not import the engine. Zod/sample validation is also outside the main synchronous graph. The minified Phaser chunk is approximately **340 KiB gzip**, below the 2 MiB first-play target before small local art/runtime chunks. This is a budget observation, not a guarantee across future additions.
+
+Walking uses WASD/arrows or a normalized eight-direction touch vector; diagonal input cannot increase speed. Long frame gaps are capped to avoid tunnelling. Escape opens pause; pointer cancel/capture loss, focus loss and app dialogs clear movement. Route/unmount cleanup disconnects observers, removes keyboard listeners, aborts pending mount work and destroys the canvas/game loop. No movement input is globally captured from forms or app shortcuts.
+
+Reduced motion follows the device preference, with an additional per-browser opt-in: standing directional sprites replace walk animation and camera follow has no easing. Low-performance mode uses Canvas rendering, 65% backing dimensions with matching camera zoom, a 30 FPS cap and no particles. Normal mode uses Phaser AUTO (WebGL with Canvas fallback), smooth camera follow and a 60 FPS cap. No particle emitters or audio are created in this foundation.
+
+Future pure logic (quests, unlocks, mechanic validation, mastery) remains outside Phaser so it can be unit-tested with Vitest.
 
 ## Game spec (v1)
 ```ts
@@ -161,7 +182,7 @@ Acceptance: a student opens a processed lecture, clicks "Make an adventure", see
 ## Roadmap
 | Task | Scope |
 |---|---|
-| G1 | Phaser setup, routes, spec schema + validator, isometric template, character movement, sample spec, this doc |
+| G1 ✅ | Implemented: lazy Phaser setup, routes/nav, strict spec schema + validator, Kenney isometric tilemap, eight-direction movement/collisions, touch, pause/render preferences and sample. |
 | G2 | NPCs, dialogue, quests, XP/progression, HUD, minimap |
 | G3 | gate / sequence / match mechanics, hints, feedback (local fake verifier) |
 | G4 🔒 | AI generation pipeline, grounding, prompt-injection defence, storage |
@@ -174,5 +195,21 @@ Acceptance: a student opens a processed lecture, clicks "Make an adventure", see
 Game-based learning and procedural content generation are established fields; lecture-to-game generation with LLMs has prior work. A credible contribution is narrower: **objective-aware mechanic selection with grounded, server-verified puzzles**, evaluated against flashcards from the same lecture.
 Measure: generation success rate, content accuracy (expert check of a sample), completion rate, pre/post-test gain, 7-day retention, latency and cost per adventure.
 
-## Credits
-Add asset packs and licences here as they are added.
+## Credits and asset provenance
+
+**Kenney Vleugels — Isometric Buildings**, [Kenney](https://kenney.nl), Creative Commons Zero ([CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)). The pack's original licence is distributed at `public/game/kenney-isometric-buildings/LICENSE.txt`.
+
+The four PNGs were obtained from the pack mirrored in [brean/isometric-kenney-test](https://github.com/brean/isometric-kenney-test/tree/4c46d4e1cca7121cb6f4d38bfd97abdecafb6d54/Assets/Sprites/kennynl/isometric_buildings), commit `4c46d4e1cca7121cb6f4d38bfd97abdecafb6d54`. Only CC0 pack images and its licence were copied; no Unity/project code or Meowzilla art is used.
+
+| Bundled file | Original pack file | Adaptation |
+| --- | --- | --- |
+| `ground.png` | `PNG/roof/flat/buildingTiles_103.png` | Resized to 96×48 for the tilemap; tinted by the renderer for paths/grass/border |
+| `house-red.png` | `PNG/base/buildingTiles_114.png` | Renamed; scaled in the renderer |
+| `house-blue.png` | `PNG/base/buildingTiles_022.png` | Renamed; scaled in the renderer |
+| `roof-red.png` | `PNG/roof/buildingTiles_069.png` | Renamed; scaled in the renderer |
+
+Explorer sprite frames, simple tree shapes and shadows are original code-owned ZEN OS art. No external asset or code URL can be supplied by a spec. All art is served from the application origin, only on play.
+
+## Foundation validation
+
+Vitest covers schema/version rejection, executable/unknown fields, graph references/cycles, bounded puzzle data, isometric conversion, collision boundaries, diagonal speed, frame-gap capping, keyboard scoping/cleanup, late lazy-load cancellation and local settings isolation. DOM lifecycle tests cover pause/resume and device motion preference. Chromium checks cover local-mode list/play, no Phaser on the list, keyboard/touch movement, pause and reduced/low-performance settings, cleanup after navigation, and 390px light/dark layouts. Run `npm run typecheck`, `npm test`, and `npm run build` before committing.

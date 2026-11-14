@@ -23,6 +23,7 @@ const MOBILE_TABS = [
   { to: '/space', icon: 'dashboard_customize', get label(){return tr("Space");} },
   { to: '/search', icon: 'search', get label(){return tr("Search");} },
   { to: '/calendar', icon: 'calendar_today', get label(){return tr("Calendar");} },
+  { to: '/adventures', icon:'explore', get label(){return tr('Adventures');} },
   { to: '/lectures', icon: 'school', get label(){return tr("Lectures");} },
   { to: '/meetings', icon: 'videocam', get label(){return tr("Meetings");} },
   { to: '/vault', icon: 'folder_special', get label(){return tr("Vault");} },

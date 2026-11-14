@@ -1,3 +1,4 @@
+import {useAdventures} from '../hooks/useAdventures';
 import {useUsos} from '../hooks/useUsos';
 import {useUiLanguage,setUiLanguage,type UiLanguage} from '../i18n';
 import {useSharedWorkspaces} from '../hooks/useSharedWorkspaces';
@@ -104,7 +105,7 @@ const compact = (o: Record<string, any>) => Object.fromEntries(Object.entries(o)
 
 export type NewMeeting = Omit<Meeting, 'id' | 'createdAt'>;
 
-interface ZenosContextType extends ReturnType<typeof useUsos>, ReturnType<typeof useSharedWorkspaces>, ReturnType<typeof useGallery>, ReturnType<typeof useChallenges>, ReturnType<typeof useFocusRooms>, ReturnType<typeof useWeeklyRecaps> {
+interface ZenosContextType extends ReturnType<typeof useAdventures>, ReturnType<typeof useUsos>, ReturnType<typeof useSharedWorkspaces>, ReturnType<typeof useGallery>, ReturnType<typeof useChallenges>, ReturnType<typeof useFocusRooms>, ReturnType<typeof useWeeklyRecaps> {
   uiLanguage:UiLanguage;
   setUiLanguage:(language:UiLanguage)=>void;
   activeWorkspaceId: string | null;
@@ -283,6 +284,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     const { data } = await supabase.auth.getSession();
     return data?.session?.access_token ?? null;
   }, []);
+  const adventures=useAdventures();
   const usos=useUsos({owner:user?.id??null,offline:isOffline,getToken:getAuthToken});
   const { accessToken, googleConnected, googleCalendarError, getGoogleAccessToken, disconnectGoogleCalendar: disconnectGoogle } = useGoogleCalendar({ userId: user?.id ?? null, isOffline, getAuthToken, providerSession: googleProviderSession });
   const googleReadRequest = useRef(0);
@@ -1136,6 +1138,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
       value={{
         state,
         ...usos,
+        ...adventures,
         ...shared,activeWorkspaceId,switchWorkspace,uiLanguage,setUiLanguage,
         ...lectures,
         ...semanticSearch,
