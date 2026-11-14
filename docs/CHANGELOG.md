@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-11-14: Added playable gate/sequence/carried-match puzzles with pure validators, numeric tolerance/text normalization/choices, difficulty-aware feedback, objective-linked three-step hints, accessible keyboard/touch overlays and a separate local sample verifier; removed direct preview completion and added cancellation/owner-isolation tests. No migration or new variables. (Codex)
+
 - 2026-11-14: Added Adventures NPC proximity/tap/E/Space interaction, accessible spec dialogue, prerequisite quests, session-only preview XP/levels, real gate collisions/unlocks, quest markers, HUD/minimap and reduced-motion completion feedback; added pure logic, dialogue, owner-isolation and flow tests, with no migration or new variables. (Codex)
 
 - 2026-11-14: Added the Adventures foundation with lazy Phaser list/play routes, strict versioned Zod specs, a CC0 Kenney isometric sample world, eight-direction animated movement/collisions, keyboard/touch controls, pause and reduced/low-performance settings, local-mode support and schema/input/lifecycle tests; no migration or new variables. (Codex)

@@ -13,8 +13,8 @@ const gate=z.strictObject({type:z.literal('gate'),...common,input:z.enum(['numbe
 });
 export const puzzleSchema=z.discriminatedUnion('type',[
  gate,
- z.strictObject({type:z.literal('sequence'),...common,items:z.array(text(100)).min(3).max(8)}),
- z.strictObject({type:z.literal('match'),...common,left:z.array(text(100)).min(3).max(6),right:z.array(text(100)).min(3).max(6)}).refine(p=>p.left.length===p.right.length,'Matching sides must have equal length'),
+ z.strictObject({type:z.literal('sequence'),...common,items:z.array(text(100)).min(3).max(8)}).refine(p=>new Set(p.items).size===p.items.length,'Switch labels must be distinct'),
+ z.strictObject({type:z.literal('match'),...common,left:z.array(text(100)).min(3).max(6),right:z.array(text(100)).min(3).max(6)}).refine(p=>p.left.length===p.right.length&&new Set(p.left).size===p.left.length&&new Set(p.right).size===p.right.length,'Matching sides must be equal and distinct'),
 ]);
 const base=z.strictObject({
  specVersion:z.literal(SPEC_VERSION),title:text(80),theme:z.enum(['digital-kingdom','forest-academy','space-lab','ancient-library']),template:z.literal('isometric-village-v1'),

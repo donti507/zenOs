@@ -10,11 +10,12 @@ import {VILLAGE,type Position} from './templates/village';
 import {mountAdventure} from './runtime';
 import {bindKeyboard} from './engine/input';
 import TouchJoystick from './TouchJoystick';
-import {normalizeProgress} from './systems/quest';
+import {normalizeProgress,questStatus} from './systems/quest';
 import {nearbyNpc,npcInRange} from './systems/npc';
 import DialogueBox from './systems/DialogueBox';
 import Hud from './systems/Hud';
 import Minimap from './systems/Minimap';
+import PuzzleOverlay from './mechanics/PuzzleOverlay';
 import MissionComplete from './systems/MissionComplete';
 export default function AdventureViewport({spec,adventureId='lost-binary-kingdom'}:{spec:AdventureSpec;adventureId?:string}){
  useUiLanguage();const {adventureSettings,setAdventureSettings,liveOpen,showModal,adventureProgress,advanceAdventureQuest}=useZenos();const systemReduce=!!useReducedMotion();
@@ -23,9 +24,10 @@ export default function AdventureViewport({spec,adventureId='lost-binary-kingdom
  const host=useRef<HTMLDivElement>(null),engine=useRef<EngineHandle|null>(null),position=useRef<Position|undefined>(undefined),pausedRef=useRef(false),dialogueRef=useRef<string|null>(null),interactRef=useRef<(id?:string)=>void>(()=>{});
  const tap=useRef<{id:number;x:number;y:number;npcId:string|null}|null>(null);
  const [paused,setPaused]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState(false),[attempt,setAttempt]=useState(0),[playerPosition,setPlayerPosition]=useState<Position>({...VILLAGE.spawn}),[dialogueNpc,setDialogueNpc]=useState<string|null>(null);
+ const [puzzleMission,setPuzzleMission]=useState<string|null>(null),solvedNotice=useRef<{title:string;xp:number;unlocked:number}|null>(null);
  const [notice,setNotice]=useState<{title:string;xp:number;unlocked:number;serial:number}|null>(null),serial=useRef(0);
- const pause=useCallback(()=>{pausedRef.current=true;dialogueRef.current=null;setDialogueNpc(null);engine.current?.setPaused(true);setPaused(true);},[]);
- const resume=()=>{if(liveOpen||showModal)return;pausedRef.current=false;engine.current?.setPaused(false);setPaused(false);host.current?.focus({preventScroll:true});};
+ const pause=useCallback(()=>{pausedRef.current=true;dialogueRef.current=null;setDialogueNpc(null);setPuzzleMission(null);engine.current?.setPaused(true);setPaused(true);},[]);
+ const resume=()=>{if(liveOpen||showModal)return;if(solvedNotice.current){setNotice({...solvedNotice.current,serial:++serial.current});solvedNotice.current=null;}pausedRef.current=false;engine.current?.setPaused(false);setPaused(false);host.current?.focus({preventScroll:true});};
  const closeDialogue=()=>{dialogueRef.current=null;setDialogueNpc(null);if(!paused)resume();};
  interactRef.current=(id?:string)=>{
   if(!ready||pausedRef.current||liveOpen||showModal||error)return;
@@ -33,13 +35,19 @@ export default function AdventureViewport({spec,adventureId='lost-binary-kingdom
   if(!npcId||!npcInRange(spec,p,npcId,progressRef.current))return;
   pausedRef.current=true;engine.current?.setPaused(true);dialogueRef.current=npcId;setDialogueNpc(npcId);
  };
- const onQuest=(type:'accept'|'complete',missionId:string)=>{
+ const onQuest=(type:'accept'|'puzzle',missionId:string)=>{
   const npcId=dialogueRef.current,p=engine.current?.getPosition()??position.current??VILLAGE.spawn;
   if(liveOpen||showModal||!npcId||!npcInRange(spec,p,npcId,progressRef.current)||!spec.missions.some(m=>m.id===missionId&&m.npcId===npcId))return;
-  const result=advanceAdventureQuest(adventureId,{type,missionId});
-  if(result){engine.current?.setProgress?.(result.progress);if(result.xpGranted>0){const mission=spec.missions.find(m=>m.id===result.missionId)!;setNotice({title:mission.title,xp:result.xpGranted,unlocked:result.newlyUnlocked.length,serial:++serial.current});}}
+  if(type==='puzzle'){if(questStatus(spec,progressRef.current,missionId)!=='active')return;dialogueRef.current=null;setDialogueNpc(null);setPuzzleMission(missionId);return;}
+  const result=advanceAdventureQuest(adventureId,{type:'accept',missionId});
+  if(result)engine.current?.setProgress?.(result.progress);
   closeDialogue();
  };
+ const onSolved=(result:{progress:import('./systems/quest').QuestProgress;xpGranted:number;newlyUnlocked:string[];missionId:string|null})=>{
+  engine.current?.setProgress?.(result.progress);const mission=spec.missions.find(m=>m.id===result.missionId);
+  if(mission&&result.xpGranted>0)solvedNotice.current={title:mission.title,xp:result.xpGranted,unlocked:result.newlyUnlocked.length};
+ };
+ const closePuzzle=()=>{setPuzzleMission(null);resume();};
  useEffect(()=>{if(!notice)return;const timer=window.setTimeout(()=>setNotice(null),5000);return()=>window.clearTimeout(timer);},[notice?.serial]);
  useEffect(()=>{engine.current?.setProgress?.(progress);},[progress]);
  useEffect(()=>{
@@ -66,10 +74,11 @@ export default function AdventureViewport({spec,adventureId='lost-binary-kingdom
  }}/>
  {!ready&&!error&&<p role="status" className="absolute inset-0 flex items-center justify-center bg-surface-container-low text-on-surface-variant">{tr('Loading adventure world…')}</p>}
  {error&&<div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-5 bg-surface-container-low"><p role="alert" className="text-error">{tr('The world could not load. Please try again.')}</p><button className={btn.primary} onClick={()=>{pausedRef.current=false;setPaused(false);setAttempt(v=>v+1);}}>{tr('Retry')}</button></div>}
- {ready&&!error&&<><div className="absolute top-2 right-2"><Minimap spec={spec} position={playerPosition} progress={progress}/></div><div className="absolute bottom-3 left-3"><TouchJoystick compact disabled={paused||!!dialogueNpc} onMove={vector=>{if(!pausedRef.current)engine.current?.setMovement(vector);}}/></div><button className={btn.primary+' absolute bottom-20 right-3 max-w-[52%] min-h-11 text-sm'} disabled={paused||!!dialogueNpc||!nearest} onClick={()=>interactRef.current()}>{nearest?tr('Talk to {{0}}',nearest.name):tr('Move near a character')}</button></>}
+ {ready&&!error&&<><div className="absolute top-2 right-2"><Minimap spec={spec} position={playerPosition} progress={progress}/></div><div className="absolute bottom-3 left-3"><TouchJoystick compact disabled={paused||!!dialogueNpc||!!puzzleMission} onMove={vector=>{if(!pausedRef.current)engine.current?.setMovement(vector);}}/></div><button className={btn.primary+' absolute bottom-20 right-3 max-w-[52%] min-h-11 text-sm'} disabled={paused||!!dialogueNpc||!!puzzleMission||!nearest} onClick={()=>interactRef.current()}>{nearest?tr('Talk to {{0}}',nearest.name):tr('Move near a character')}</button></>}
  {notice&&<div key={notice.serial} className="absolute top-2 left-2 right-32 pointer-events-none"><MissionComplete title={notice.title} xp={notice.xp} unlocked={notice.unlocked} reducedMotion={reducedMotion||adventureSettings.lowPerformance}/></div>}
  </div><p id="adventure-controls" className="text-xs text-on-surface-variant">{tr('Walk with WASD, arrows or the joystick. Press E/Space or tap a nearby character to talk. Escape pauses.')}</p>
 
  {dialogueNpc&&!paused&&<div key={dialogueNpc}><DialogueBox spec={spec} npcId={dialogueNpc} progress={progress} reducedMotion={reducedMotion||adventureSettings.lowPerformance} onClose={closeDialogue} onQuest={onQuest}/></div>}
+ {puzzleMission&&!paused&&<div key={puzzleMission}><PuzzleOverlay spec={spec} missionId={puzzleMission} adventureId={adventureId} reducedMotion={reducedMotion||adventureSettings.lowPerformance} onClose={closePuzzle} onSolved={onSolved}/></div>}
  {createPortal(<Modal open={paused&&!error} onClose={resume} title={tr('Adventure paused')} footer={<button className={btn.primary+' min-h-11'} disabled={!!liveOpen||!!showModal} onClick={resume}>{tr('Resume exploring')}</button>}><p className="text-on-surface-variant">{tr('Your explorer stays here while you take a break.')}</p><label className="flex items-center gap-3 min-h-11"><input type="checkbox" checked={adventureSettings.lowPerformance} onChange={e=>setAdventureSettings({lowPerformance:e.target.checked})}/><span>{tr('Low-performance mode')}<span className="block text-sm text-on-surface-variant">{tr('Lower resolution, 30 FPS, no particles.')}</span></span></label><label className="flex items-center gap-3 min-h-11"><input type="checkbox" checked={reducedMotion} disabled={systemReduce} onChange={e=>setAdventureSettings({reducedMotion:e.target.checked})}/><span>{tr('Reduced motion')}<span className="block text-sm text-on-surface-variant">{systemReduce?tr('Enabled by your device preference.'):tr('No walk animation or camera easing.')}</span></span></label></Modal>,document.body)}</div>;
 }
