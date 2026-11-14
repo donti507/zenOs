@@ -58,7 +58,7 @@ Client sends `{messages, context}` to `POST /api/dante` → server builds the sy
 ```json
 {"actions":[{"action":"create_task","data":{"title":"…","date":"YYYY-MM-DD","cat":"…"}}]}
 ```
-Supported: `create_task, complete_task, reopen_task, update_task, add_task_steps, create_meeting, switch_view, filter_category, remember, forget, edit_space_page`. `context.mode = "voice"` makes replies short and speakable.
+Supported: `create_task, complete_task, reopen_task, update_task, add_task_steps, create_meeting, switch_view, filter_category, remember, forget, edit_space_page, create_adventure, open_adventure`. `context.mode = "voice"` makes replies short and speakable.
 
 ## Environment (.env)
 `LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_TIMEOUT_MS, VISION_MODEL, STT_MODEL (+STT_BASE_URL, STT_API_KEY), GEMINI_API_KEY, DANTE_RATE_LIMIT, DANTE_ALLOW_ANONYMOUS, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, PORT, SENTRY_DSN, VITE_SENTRY_DSN, DANTE_DAILY_LIMIT, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, EMBEDDING_MODEL, SEARCH_INDEX_WORKER, SPACE_MODELS, ARENA_MODELS, ADMIN_EMAILS, WEEKLY_RECAP_WORKER, TTS_BASE_URL, TTS_API_KEY, TTS_MODEL, TTS_VOICE, USOS_BASE_URL, USOS_CONSUMER_KEY, USOS_CONSUMER_SECRET, USOS_TOKEN_KEY`. See `.env.example`.
@@ -241,3 +241,9 @@ USOS operational failures write `[USOS]` plus only fixed diagnostic stage/reason
 
 ## Adventures generation (G4)
 `server/adventures.ts` authenticates owned lecture/raw-PDF generation before parsing, limits capacity and charges one existing daily message per logical generation. `adventurePdf.ts` uses bounded Poppler subprocesses (install poppler-utils/util-linux); `adventureGeneration.ts` treats source/model text as data, retries strict JSON validation twice, checks canonical snippets and independently audits claims before saving. Apply the complete migration: adventures has own-row safe-column SELECT only; answers and writes remain service-only. Never return/select/export private keys. `useAdventureGeneration` supplies personal-only Context state, progress and preview; generated worlds explore only until server verification (G5), never the local sample verifier. Existing LLM/Supabase server variables enable it; local sample stays independent. See docs/GAME_DESIGN.md.
+
+
+## Adaptive Adventures and learning evidence
+`src/game/systems/adaptation.ts` owns deterministic mastery/hint/practice rules. Keep `LearningEvidence` separate from `EngagementMetrics`: time, XP and completion cannot affect mastery. Optional answer-free practiceVariants/concept explanations extend spec version 1 compatibly; private variant keys stay server-only and generation audits their claims. Render only the base validated spec in Phaser; unlock extra DOM puzzle missions from stored variants, zero XP/no gate unlocks/no LLM calls.
+
+`server/adventureRuntime.ts` verifies owned core/variant answers, persists separated runs through service-only owner-checked revision CAS and bounded idempotency receipts, and supplies canonical learning context to Dante. Browser roles may read only safe own progress columns; no writes or receipt/answer reads. Apply the complete migration, export safe progress and cascade deletion. Rate-limit checking; generation alone spends AI quota. `useAdventures` owns account/workspace epochs, normalized local sample persistence and server revision guards. Cloud reads/playback must work without a configured LLM. Dante create_adventure/open_adventure run through shared action validation in chat/Live; server replaces cloud learning context and excludes shared/private crossover. Label local results as sample practice and all mastery scores as rule-based estimates, not grades. See docs/GAME_DESIGN.md.

@@ -1,3 +1,4 @@
+import { allMissions } from "../src/game/systems/adaptation";
 import { z } from "zod";
 import {
   adventureSpecSchema,
@@ -172,7 +173,7 @@ export async function generateAdventureSpec(
   );
   progress("generating");
   const generated = await ask(
-    "Create an isometric-village-v1 game. Use objective IDs from plan and the assigned mechanics. One mission per objective, honor dependencies. Unique IDs across concepts/objectives/NPCs/missions. NPC slots square/archive/observatory; no unreachable gates. Every mission sources contains exact quotes (12–200 characters) with the canonical section ref. Public spec must contain NO answers/order/pairs/keys. Answers live only in separate answers map keyed by mission id. Schema: " +
+    "Create an isometric-village-v1 game. Use objective IDs from plan and the assigned mechanics. One core mission per objective, honor dependencies. Include one practiceVariants entry per core mission with a new question grounded in the same source; each variant references its core missionId, and has its own answers key. Add 2 short alternative concept explanations in concepts[].explanations. Unique IDs across concepts/objectives/NPCs/missions. NPC slots square/archive/observatory; no unreachable gates. Every mission sources contains exact quotes (12–200 characters) with the canonical section ref. Public spec must contain NO answers/order/pairs/keys. Answers live only in separate answers map keyed by mission id. Schema: " +
       JSON.stringify(z.toJSONSchema(envelope, { unrepresentable: "any" })),
     asyncParse,
     {
@@ -187,9 +188,9 @@ export async function generateAdventureSpec(
     progress("validating");
     const data = envelope.parse(v);
     validateAdventureSpec(data.spec);
-    if (Object.keys(data.answers).length !== data.spec.missions.length)
+    if (Object.keys(data.answers).length !== allMissions(data.spec).length)
       throw new Error();
-    for (const m of data.spec.missions) {
+    for (const m of allMissions(data.spec)) {
       const objective = plan.objectives.find((o) => o.id === m.objectiveId),
         answer = data.answers[m.id];
       if (
@@ -238,11 +239,11 @@ export async function generateAdventureSpec(
     .object({
       reviews: z
         .array(z.object({ missionId: id, supported: z.boolean() }).strict())
-        .max(8),
+        .max(16),
     })
     .strict();
   const audit = await ask(
-    "Independently audit every mission: objective, NPC dialogue, puzzle, hints and private key must be supported by source, not merely mention the same words. Unsupported/ambiguous claims => supported:false. Return " +
+    "Independently audit every core mission AND every practice variant (use its own ID): objective, linked concept explanations/misconceptions, NPC dialogue, puzzle, hints and private key must be supported by source, not merely mention the same words. Unsupported/ambiguous claims => supported:false. Return " +
       JSON.stringify(z.toJSONSchema(auditSchema)),
     (v) => auditSchema.parse(v),
     generated,
@@ -264,6 +265,13 @@ export async function generateAdventureSpec(
   const spec: AdventureSpec = validateAdventureSpec({
     ...generated.spec,
     missions,
+    practiceVariants: (generated.spec.practiceVariants ?? []).filter(
+      (v) =>
+        missions.some((m) => m.id === v.missionId) &&
+        v.sources.every((s) => quoteSupported(sources, s.ref, s.quote)) &&
+        audit.reviews.filter((r) => r.missionId === v.id).length === 1 &&
+        audit.reviews.some((r) => r.missionId === v.id && r.supported),
+    ),
     objectives: generated.spec.objectives.filter((o) =>
       missions.some((m) => m.objectiveId === o.id),
     ),
@@ -284,8 +292,8 @@ export async function generateAdventureSpec(
   return {
     spec,
     answers: Object.fromEntries(
-      missions.map((m) => [m.id, generated.answers[m.id]]),
+      allMissions(spec).map((m) => [m.id, generated.answers[m.id]]),
     ),
-    source_refs: missions.flatMap((m) => m.sources),
+    source_refs: allMissions(spec).flatMap((m) => m.sources),
   };
 }

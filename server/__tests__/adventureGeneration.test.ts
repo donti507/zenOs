@@ -1,3 +1,4 @@
+import { allMissions } from "../../src/game/systems/adaptation";
 import { expect, it, vi } from "vitest";
 import {
   generateAdventureSpec,
@@ -22,6 +23,19 @@ const plan = {
 const generated = {
   spec: lostBinaryKingdom,
   answers: {
+    "practice-powers": { type: "sequence", order: [1, 3, 2, 0] },
+    "practice-conversion": {
+      type: "gate",
+      key: { kind: "text", value: "110" },
+    },
+    "practice-logic": {
+      type: "match",
+      pairs: [
+        [0, 2],
+        [1, 0],
+        [2, 1],
+      ],
+    },
     "power-path": { type: "sequence", order: [1, 3, 2, 0] },
     "east-gate": { type: "gate", key: { kind: "text", value: "1101" } },
     "circuit-archive": {
@@ -35,7 +49,7 @@ const generated = {
   },
 };
 const audit = {
-  reviews: lostBinaryKingdom.missions.map((m) => ({
+  reviews: allMissions(lostBinaryKingdom).map((m) => ({
     missionId: m.id,
     supported: true,
   })),
@@ -90,4 +104,24 @@ it("rejects private keys inserted into public specs and validates permutations",
     generateAdventureSpec(sources, new AbortController().signal, () => {}, m),
   ).rejects.toThrow();
   expect(m).toHaveBeenCalledTimes(4);
+});
+
+it("drops unsupported practice variants together with their private keys while retaining supported core missions", async () => {
+  const rejected = {
+    reviews: audit.reviews.map((r) => ({
+      ...r,
+      supported: r.missionId !== "practice-powers",
+    })),
+  };
+  const result = await generateAdventureSpec(
+    sources,
+    new AbortController().signal,
+    () => {},
+    model([plan, generated, rejected]),
+  );
+  expect(result.spec.missions).toHaveLength(3);
+  expect(result.spec.practiceVariants?.map((v) => v.id)).not.toContain(
+    "practice-powers",
+  );
+  expect(result.answers).not.toHaveProperty("practice-powers");
 });

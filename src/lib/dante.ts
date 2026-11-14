@@ -51,7 +51,7 @@ export function toSpeech(text: string) {
     .trim();
 }
 
-export function buildDanteContext(state: ZenosState, googleEvents: any[], userName: string, language: string, mode: 'chat' | 'voice' = 'chat', localMode = false) {
+export function buildDanteContext(state: ZenosState, googleEvents: any[], userName: string, language: string, mode: 'chat' | 'voice' = 'chat', localMode = false, adventureLearning?:unknown) {
   const now = new Date();
   const todayStr = today();
   const tasks = state.tasks;
@@ -61,6 +61,8 @@ export function buildDanteContext(state: ZenosState, googleEvents: any[], userNa
     uiLanguage:getUiLanguage(),
     workspaceId:state.workspaceId||null,
     localSearchSources: localMode ? localSearchSources(state).slice(0,100).map(row=>({...row,content:row.content.slice(0,2400)})) : undefined,
+    adventureLearning:state.workspaceId?{status:'unavailable',concepts:[]}:adventureLearning,
+    lectures:state.workspaceId?[]:(state.lectures??[]).slice(0,50).map(l=>({id:l.id,title:l.title})),
     memory: state.workspaceId?[]:recentMemory(state.danteMemory),
     userName,
     language,

@@ -125,7 +125,7 @@ export default function Adventures() {
               </ul>
               <p>
                 {tr(
-                  "Generated worlds support exploration. Puzzle checking is coming soon.",
+                  "Server-checked puzzles · Practice adapts to your answers.",
                 )}
               </p>
               <Link

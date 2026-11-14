@@ -1,6 +1,8 @@
 # Changelog
 Add one line per change: date, what changed, who (Claude/Codex/you).
 
+- 2026-11-15: Added rule-based concept mastery, automatic explanation hints, stored zero-XP practice variants and NPC alternatives, separate learning/activity panels, canonical server answer checks with saved CAS/idempotent progress, local persistence and Dante create/open/weakness actions; added logic/API/SQL/UI regression tests. Apply the complete migration. (Codex)
+
 - 2026-11-14: Added authenticated quota-limited lecture/PDF Adventures generation with bounded server extraction, strict schema repairs, source grounding/audit, private answer storage/RLS, progress/preview and personal cloud exploration; preserved local sample and added server/PDF/SQL tests. Apply the migration and install Poppler. (Codex)
 
 - 2026-11-14: Added playable gate/sequence/carried-match puzzles with pure validators, numeric tolerance/text normalization/choices, difficulty-aware feedback, objective-linked three-step hints, accessible keyboard/touch overlays and a separate local sample verifier; removed direct preview completion and added cancellation/owner-isolation tests. No migration or new variables. (Codex)

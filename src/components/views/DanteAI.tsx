@@ -64,7 +64,7 @@ export default function DanteAI() {
     addMeeting,
     saveDanteMessage,
     clearDanteHistory,
-    rememberFact, forgetFact, confirmForgetFact,
+    rememberFact, forgetFact, confirmForgetFact, generateAdventure, adventureGenerationEnabled, loadAdventure, adventureLearningContext,
     googleEvents,
     user,
     isOffline,
@@ -120,7 +120,9 @@ export default function DanteAI() {
   const runActions = async (msg: DanteMessage) => {
     const actions = parseActions(msg.content);
     if (!actions.length) return;
-    const results = await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact });
+    const results = await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
+      createAdventure:async lectureId=>{if(!adventureGenerationEnabled||stateRef.current.workspaceId)throw new Error('Adventure generation is unavailable.');navigate('/adventures');const id=await generateAdventure({lectureId});if(!id)throw new Error('Could not generate adventure. Check the source and try again.');},
+      openAdventure:async id=>{await loadAdventure(id);navigate('/adventures/'+encodeURIComponent(id));} });
     setActionResults(r => ({ ...r, [msg.ts]: results }));
   };
 
@@ -161,7 +163,7 @@ export default function DanteAI() {
       if(!current())return;
       full = await streamDante({
         messages,
-        context: buildDanteContext(stateRef.current, googleEvents, userName, voiceLang, 'chat', isOffline),
+        context: buildDanteContext(stateRef.current, googleEvents, userName, voiceLang, 'chat', isOffline, adventureLearningContext),
         token,
         signal: controller.signal,
         onText: t => {

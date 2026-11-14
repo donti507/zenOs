@@ -9,6 +9,8 @@ export type ActionResult = { label: string; ok: boolean; detail?: string };
 
 export interface ActionDeps {
   stateRef: { current: ZenosState };
+  createAdventure?: (lectureId:string)=>Promise<void>;
+  openAdventure?: (id:string)=>Promise<void>;
   editSpacePageFromVoice?: (instruction: string) => Promise<void>;
   rememberFact?: (fact: string) => Promise<DanteMemory>;
   forgetFact?: (id: string) => Promise<void>;
@@ -20,6 +22,7 @@ export interface ActionDeps {
   updateState: (u: Partial<ZenosState>) => void;
 }
 
+const isUuid=(value:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const VIEWS = ["dashboard", "tasks", "kanban", "calendar", "meetings", "analytics", "vault", "dante", "lectures", "search", "space", "gallery", "focus_rooms"];
 
 /** Runs the actions Dante asked for. Shared by the chat page and Dante Live. */
@@ -49,9 +52,19 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
   const validDate = (d: unknown) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : undefined);
 
   const executeAction = async (a: DanteAction): Promise<ActionResult> => {
-    if(stateRef.current.workspaceId&&['remember','forget','edit_space_page'].includes(a.action))return {label:'Personal feature',ok:false,detail:'Switch to Personal space to use this feature.'};
+    if(stateRef.current.workspaceId&&['remember','forget','edit_space_page','create_adventure','open_adventure'].includes(a.action))return {label:'Personal feature',ok:false,detail:'Switch to Personal space to use this feature.'};
     const d = a.data || {};
     switch (a.action) {
+      case 'create_adventure': {
+        if(typeof d.lectureId!=='string'||!isUuid(d.lectureId)||Object.keys(d).some(k=>k!=='lectureId'))return {label:'Create adventure',ok:false,detail:'Choose an existing lecture.'};
+        if(!deps.createAdventure)return {label:'Create adventure',ok:false,detail:'Adventure generation is unavailable.'};
+        await deps.createAdventure(d.lectureId);return {label:'Adventure preview ready',ok:true};
+      }
+      case 'open_adventure': {
+        if(typeof d.id!=='string'||!(d.id==='lost-binary-kingdom'||isUuid(d.id))||Object.keys(d).some(k=>k!=='id'))return {label:'Open adventure',ok:false,detail:'Invalid adventure ID.'};
+        if(!deps.openAdventure)return {label:'Open adventure',ok:false,detail:'Adventure unavailable.'};
+        await deps.openAdventure(d.id);return {label:'Open adventure',ok:true};
+      }
       case 'edit_space_page': {
         const instruction = spaceText(d.instruction, SPACE_LIMITS.prompt, 'page instruction');
         if (!deps.editSpacePageFromVoice) return {label: 'Update page', ok: false, detail: 'Open Dante Live on a My Space page to edit it.'};
@@ -159,8 +172,10 @@ export async function runDanteActions(actions: DanteAction[], deps: ActionDeps):
 
   const workspace=stateRef.current.workspaceId,epoch=stateRef.current.workspaceEpoch;
   const results: ActionResult[] = [];
+  const adventureActions=new Set<string>();
   for (const a of actions.slice(0, 10)) {
     if(stateRef.current.workspaceId!==workspace||stateRef.current.workspaceEpoch!==epoch)break;
+    if(['create_adventure','open_adventure'].includes(a.action)){const key=a.action+':'+JSON.stringify(a.data);if(adventureActions.has(key))continue;adventureActions.add(key);}
     try {
       results.push(await executeAction(a));
     } catch (e: any) {

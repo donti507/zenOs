@@ -19,9 +19,10 @@ export const puzzleSchema=z.discriminatedUnion('type',[
 const base=z.strictObject({
  specVersion:z.literal(SPEC_VERSION),title:text(80),theme:z.enum(['digital-kingdom','forest-academy','space-lab','ancient-library']),template:z.literal('isometric-village-v1'),
  objectives:z.array(z.strictObject({id,text:text(160),conceptIds:z.array(id).min(1).max(12)})).min(1).max(12),
- concepts:z.array(z.strictObject({id,name:text(60),misconception:text(200).optional()})).min(1).max(20),
+ concepts:z.array(z.strictObject({id,name:text(60),misconception:text(200).optional(),explanations:z.array(text(400)).min(1).max(3).optional()})).min(1).max(20),
  npcs:z.array(z.strictObject({id,name:text(60),role:z.enum(['guide','keeper','sage']),slot:z.enum(['square','archive','observatory']),dialogue:z.array(z.strictObject({speaker:id,text:text(240)})).min(1).max(12)})).min(1).max(3),
  missions:z.array(z.strictObject({id,title:text(80),objectiveId:id,npcId:id,prerequisites:z.array(id).max(8),puzzle:puzzleSchema,xp:z.number().int().min(10).max(100),unlocks:z.strictObject({gateSlot:z.enum(['east-gate','archive-gate','observatory-gate'])}).optional(),sources:z.array(z.strictObject({ref:text(80),quote:text(200)})).min(1).max(4)})).min(3).max(8),
+ practiceVariants:z.array(z.strictObject({id,missionId:id,title:text(80),puzzle:puzzleSchema,sources:z.array(z.strictObject({ref:text(80),quote:text(200)})).min(1).max(4)})).max(8).optional(),
  finale:z.strictObject({missionIds:z.array(id).min(1).max(8),text:text(300)}),
 });
 export const adventureSpecSchema=base.superRefine((s,ctx)=>{
@@ -37,6 +38,7 @@ export const adventureSpecSchema=base.superRefine((s,ctx)=>{
   if(mission.prerequisites.some(v=>!missions.has(v))||new Set(mission.prerequisites).size!==mission.prerequisites.length)issue('Unknown or duplicate prerequisite');
   if(mission.unlocks&&!VILLAGE.gateSlots.includes(mission.unlocks.gateSlot))issue('Unknown gate slot');
  }
+ const variants=s.practiceVariants??[];const variantIds=new Set<string>();for(const v of variants){if(!missions.has(v.missionId)||variantIds.has(v.id)||s.concepts.some(c=>c.id===v.id)||s.objectives.some(o=>o.id===v.id)||s.npcs.some(n=>n.id===v.id)||missions.has(v.id))issue('Invalid practice variant reference or ID');variantIds.add(v.id);}
  const visiting=new Set<string>(),done=new Set<string>();
  const visit=(key:string)=>{if(visiting.has(key)){issue('Prerequisite cycle');return;}if(done.has(key))return;visiting.add(key);for(const ref of missions.get(key)?.prerequisites||[])if(missions.has(ref))visit(ref);visiting.delete(key);done.add(key);};
  for(const mission of s.missions)visit(mission.id);

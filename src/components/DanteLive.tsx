@@ -3,7 +3,7 @@ import {tr,useUiLanguage,speechLocale} from '../i18n';
 import {createLiveSpeech} from '../lib/liveSpeech';
 import {DANTE_VOICE_PREFS_KEY,loadDanteVoicePreferences,loadDanteVoiceLanguage,pickDanteVoice,type DanteVoicePreferences} from '../lib/danteVoice';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { editSpaceByVoice, spaceVoiceSlug, spaceVoiceConfirmation } from '../lib/spaceVoice';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useZenos } from '../context/ZenosContext';
@@ -71,10 +71,11 @@ export default function DanteLive() {
   const uiLanguage=useUiLanguage();
   const {
     liveOpen, setLiveOpen, stateRef, user, isOffline, activeWorkspaceId, googleEvents, getAuthToken, saveDanteMessage,
-    addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
+    addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact, generateAdventure, adventureGenerationEnabled, loadAdventure, adventureLearningContext,
     spacePages, loadSpacePage, editSpacePage,
   } = useZenos();
   const location = useLocation();
+  const navigate=useNavigate();
   const pageSlug = activeWorkspaceId?null:spaceVoiceSlug(location.pathname);
   const activePage = (spacePages || []).find(page => page.slug === pageSlug);
   const voiceScope = useMemo(() => ({pathname: location.pathname, owner: user?.id, isOffline, activeWorkspaceId,uiLanguage, pageId: activePage?.id}), [location.pathname, location.key, user?.id, isOffline, activeWorkspaceId,uiLanguage, activePage?.id]);
@@ -229,7 +230,7 @@ export default function DanteLive() {
       const name = user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
       full = await streamDante({
         messages: history,
-        context: buildDanteContext(stateRef.current, googleEvents, name, lang, 'voice', isOffline),
+        context: buildDanteContext(stateRef.current, googleEvents, name, lang, 'voice', isOffline, adventureLearningContext),
         token,
         signal: controller.signal,
         onText: t => { if (!controller.signal.aborted && scopeRef.current === captured) { full = t; setReply(visibleText(t)); speakReady(false); } },
@@ -247,7 +248,9 @@ export default function DanteLive() {
     speaker.finish();
     saveDanteMessage('assistant', full);
     const actions = parseActions(full);
-    if (actions.length) setResults(await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact }));
+    if (actions.length) setResults(await runDanteActions(actions, { stateRef, addTask, editTask, toggleTaskDone, addMeeting, updateState, rememberFact, forgetFact, confirmForgetFact,
+      createAdventure:async lectureId=>{if(!adventureGenerationEnabled||stateRef.current.workspaceId)throw new Error('Adventure generation is unavailable.');navigate('/adventures');const id=await generateAdventure({lectureId});if(!id)throw new Error('Could not generate adventure. Check the source and try again.');},
+      openAdventure:async id=>{await loadAdventure(id);navigate('/adventures/'+encodeURIComponent(id));} }));
     if (!toSpeech(full)) speaker.finish();
 
     await speaker.done;

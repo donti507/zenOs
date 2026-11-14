@@ -286,7 +286,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     return data?.session?.access_token ?? null;
   }, []);
   const adventureGeneration=useAdventureGeneration({ownerId:user?.id,isOffline,workspaceId:activeWorkspaceId,getToken:getAuthToken});
-  const adventures=useAdventures({ownerId:user?.id??null,isOffline,workspaceId:activeWorkspaceId,loadGenerated:adventureGeneration.loadGeneratedAdventure});
+  const adventures=useAdventures({ownerId:user?.id??null,isOffline,workspaceId:activeWorkspaceId,getToken:getAuthToken,loadGenerated:adventureGeneration.loadGeneratedAdventure});
   const usos=useUsos({owner:user?.id??null,offline:isOffline,getToken:getAuthToken});
   const { accessToken, googleConnected, googleCalendarError, getGoogleAccessToken, disconnectGoogleCalendar: disconnectGoogle } = useGoogleCalendar({ userId: user?.id ?? null, isOffline, getAuthToken, providerSession: googleProviderSession });
   const googleReadRequest = useRef(0);

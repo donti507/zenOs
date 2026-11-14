@@ -1,3 +1,4 @@
+import {createAdventureRuntime} from './server/adventureRuntime';
 import {createAdventures} from './server/adventures';
 import {createUsos} from './server/usos';
 import {createWorkspaceContextReader} from './server/workspaces';
@@ -53,9 +54,12 @@ async function startServer() {
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
   const adventures=createAdventures();
   app.get('/api/adventures/status',adventures.status);
-  app.post('/api/adventures/generate',requireUser,adventures.signed,rateLimit,adventures.acquire,adventures.body,adventures.prepare,daily.count('messages'),adventures.generate);
+  app.post('/api/adventures/generate',requireUser,adventures.signed,adventures.generationGate,rateLimit,adventures.acquire,adventures.body,adventures.prepare,daily.count('messages'),adventures.generate);
   app.get('/api/adventures',requireUser,adventures.signed,adventures.list);
   app.get('/api/adventures/:id',requireUser,adventures.signed,adventures.read);
+  const adventureRuntime=createAdventureRuntime();
+  app.get('/api/adventures/:id/progress',requireUser,adventureRuntime.signed,adventureRuntime.get);
+  app.post('/api/adventures/:id/actions',requireUser,adventureRuntime.signed,rateLimit,adventureRuntime.body,adventureRuntime.act);
   app.use(express.json({ limit: '512kb' }));
   app.post('/api/auth/usos/connect',usos.connect);
   app.post('/api/auth/usos/complete',usos.complete);
@@ -176,7 +180,7 @@ async function startServer() {
       promptContext = sharedContext || await readMemory((req as any).userId, req.headers.authorization, context);
       searchResult = sharedContext?{status:'unavailable',results:[],pending:0}:await runDanteSearch({userId:(req as any).userId,authorization:req.headers.authorization||'',question:history.at(-1)!.content,localSources:context?.localSearchSources,search:semanticSearch,config:llm,signal:abort.signal});
       // Never trust client-supplied retrieval results or tool status.
-      promptContext = {...promptContext,search:searchPromptData(searchResult)};
+      promptContext = {...promptContext,search:searchPromptData(searchResult),adventureLearning:sharedContext?{status:'unavailable',concepts:[]}:(String((req as any).userId).startsWith('anon:')?{...context?.adventureLearning,status:'local-practice'}:await adventureRuntime.danteStats((req as any).userId))};
     } catch {
       if(abort.signal.aborted)return;
       return res.status(503).json({ error: 'Dante could not load saved notes or memory. Check search setup and try again.' });

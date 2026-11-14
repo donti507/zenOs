@@ -1932,3 +1932,41 @@ CREATE POLICY adventures_own_read ON public.adventures FOR SELECT TO authenticat
 REVOKE ALL ON public.adventures FROM PUBLIC,anon,authenticated;
 GRANT SELECT(id,user_id,title,lecture_id,spec,source_refs,status,created_at) ON public.adventures TO authenticated;
 GRANT ALL ON public.adventures TO service_role;
+
+-- Learning evidence and engagement are separate; only trusted server verification writes.
+CREATE TABLE IF NOT EXISTS public.adventure_progress (
+ id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ adventure_id uuid NOT NULL REFERENCES public.adventures(id) ON DELETE CASCADE,
+ revision integer NOT NULL DEFAULT 0 CHECK(revision>=0),
+ run jsonb NOT NULL CHECK(jsonb_typeof(run)='object' AND run ?& ARRAY['learning','engagement'] AND jsonb_typeof(run->'learning')='object' AND jsonb_typeof(run->'engagement')='object'),
+ receipts jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(receipts)='array' AND jsonb_array_length(receipts)<=64),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(user_id,adventure_id)
+);
+CREATE INDEX IF NOT EXISTS adventure_progress_owner_updated ON public.adventure_progress(user_id,updated_at DESC);
+ALTER TABLE public.adventure_progress ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS adventure_progress_own_read ON public.adventure_progress;
+CREATE POLICY adventure_progress_own_read ON public.adventure_progress FOR SELECT TO authenticated USING(user_id=auth.uid());
+REVOKE ALL ON public.adventure_progress FROM PUBLIC,anon,authenticated;
+GRANT SELECT(id,user_id,adventure_id,run,updated_at) ON public.adventure_progress TO authenticated;
+GRANT ALL ON public.adventure_progress TO service_role;
+CREATE OR REPLACE FUNCTION public.commit_adventure_run(p_user_id uuid,p_adventure_id uuid,p_revision integer,p_run jsonb,p_receipts jsonb)
+RETURNS boolean LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_revision integer;
+BEGIN
+ -- The adventure lock serializes first creation and all later compare-and-swap writes.
+ PERFORM 1 FROM public.adventures WHERE id=p_adventure_id AND user_id=p_user_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Adventure not found'; END IF;
+ SELECT revision INTO v_revision FROM public.adventure_progress WHERE user_id=p_user_id AND adventure_id=p_adventure_id;
+ IF NOT FOUND THEN
+   IF p_revision<>0 THEN RETURN false; END IF;
+   INSERT INTO public.adventure_progress(user_id,adventure_id,run,receipts,revision) VALUES(p_user_id,p_adventure_id,p_run,p_receipts,1);
+ ELSE
+   IF v_revision<>p_revision THEN RETURN false; END IF;
+   UPDATE public.adventure_progress SET run=p_run,receipts=p_receipts,revision=revision+1,updated_at=now() WHERE user_id=p_user_id AND adventure_id=p_adventure_id;
+ END IF;
+ RETURN true;
+END $$;
+REVOKE ALL ON FUNCTION public.commit_adventure_run(uuid,uuid,integer,jsonb,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.commit_adventure_run(uuid,uuid,integer,jsonb,jsonb) TO service_role;

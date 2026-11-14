@@ -39,6 +39,13 @@ export function createAdventures(
     const uid = (req as any).userId;
     if (!uid || uid.startsWith("anon:"))
       return res.status(401).json({ error: "Sign in to generate adventures." });
+    if (!db)
+      return res
+        .status(503)
+        .json({ error: "Adventure generation is unavailable." });
+    next();
+  };
+  const generationGate: RequestHandler = (_req, res, next) => {
     if (!ready)
       return res
         .status(503)
@@ -125,12 +132,10 @@ export function createAdventures(
       next();
     } catch {
       if (!signal.aborted)
-        res
-          .status(400)
-          .json({
-            error:
-              "Use a readable, unencrypted PDF up to 10 MB and 40 pages, or an existing lecture.",
-          });
+        res.status(400).json({
+          error:
+            "Use a readable, unencrypted PDF up to 10 MB and 40 pages, or an existing lecture.",
+        });
       else if (!res.destroyed)
         res.status(408).json({ error: "Source processing timed out." });
     }
@@ -225,6 +230,7 @@ export function createAdventures(
   };
   return {
     signed,
+    generationGate,
     acquire,
     body,
     prepare,
@@ -232,7 +238,9 @@ export function createAdventures(
     list,
     read,
     status: ((_req, res) => {
-      res.set("Cache-Control", "no-store").json({ enabled: ready });
+      res
+        .set("Cache-Control", "no-store")
+        .json({ enabled: ready, storage: !!db });
     }) as RequestHandler,
   };
 }

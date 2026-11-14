@@ -225,9 +225,9 @@ Acceptance: a student opens a processed lecture, clicks "Make an adventure", see
 | G1 ✅ | Implemented: lazy Phaser setup, routes/nav, strict spec schema + validator, Kenney isometric tilemap, eight-direction movement/collisions, touch, pause/render preferences and sample. |
 | G2 ✅ | Spec-driven nearby NPC interaction/dialogue, prerequisite quests and local preview XP/levels, collision gates, markers, HUD, minimap and reduced-motion completion feedback. |
 | G3 ✅ | Reusable gate/sequence/carried-match controls, pure validation, difficulty feedback, three-step hints and local sample verification; no public answer keys. |
-| G4 🔒 | AI generation pipeline, grounding, prompt-injection defence, storage |
-| G5 🔒 | Server answer checks, saved progress, results screen |
-| G6 | Rule-based adaptation, mastery panel, Dante actions (create/open adventure) |
+| G4 ✅ | AI generation pipeline, grounding, prompt-injection defence, storage |
+| G5 partial | Server answer checks and saved progress implemented for adaptation; dedicated results screen remains future work. |
+| G6 ✅ | Rule-based adaptation, stored practice variants, mastery/engagement panels and Dante create/open/weakness integration. |
 | G7 | Polish, sound, accessibility, mobile, Playwright e2e |
 | G8 | Optional consented research analytics + docs/RESEARCH.md |
 
@@ -272,4 +272,30 @@ One logical generation consumes **one message** under the existing atomic daily 
 
 `adventures` stores ready worlds only: safe public spec, private answers, grounded source refs and optional lecture link. Authenticated users have SELECT privileges for safe columns only plus own-row RLS; SELECT `*`, answers and all client writes are forbidden. Service role writes, account deletion cascades, and account export explicitly omits keys. Source lecture deletion retains the generated world and citations. APIs always select safe fields. Private generation is available in Personal space only; local mode retains the full hand-authored sample without API requests.
 
-`useAdventureGeneration` owns API state through ZenosContext, bounded progress decoding, cancellation and account/workspace epochs. The list shows a preview (topic/objectives/theme/mission count) before exploration. Generated worlds intentionally cannot use the local sample answer fixture: authoritative puzzle checking remains G5. Phaser remains lazy, and generated strings render only as React text.
+`useAdventureGeneration` owns API state through ZenosContext, bounded progress decoding, cancellation and account/workspace epochs. The list shows a preview (topic/objectives/theme/mission count) before exploration. Generated worlds use the server verifier described below, never the local sample answer fixture. Phaser remains lazy, and generated strings render only as React text.
+
+## Adaptive practice and mastery (G6)
+
+Apply the complete migration before deployment. `adventure_progress` stores **learning evidence** (`learning.missions` and explanation exposures) separately from **engagement** (accepted/completed missions, estimated active seconds and last activity). Own-row RLS and safe-column SELECT are read-only for browser roles. Only server verification writes progress, through a service-only, owner-checked compare-and-swap RPC; account/adventure deletion cascades. Export includes the safe run but excludes idempotency receipts and answer keys. No new environment variables.
+
+This slice supplies the answer-checking/persistence prerequisite that was missing after G4: `GET /api/adventures/:id/progress` and `POST /api/adventures/:id/actions` require a verified account, canonical owned spec and existing server-only keys. Actions are strictly bounded accept/hint/answer/explanation/tick requests, never caller-provided correctness, XP or mastery. Shared per-minute limits apply; checking, hints, stored variants and explanations make **no LLM call** and spend no daily AI message. Generation through Dante still spends its normal generation message in addition to the chat message.
+
+The server verifies gates (including tolerance/normalization/choices), sequences and matches, then applies pure rules in `src/game/systems/adaptation.ts`. Compare-and-swap retries preserve concurrent device updates. Per-run receipts deduplicate the most recent 64 request IDs, binding IDs to request fingerprints; completed missions cannot grant XP again even after receipt eviction. No solution is returned. Client revision guards reject late state replacements; a cancelled request may already have committed, so reopening the world reloads canonical progress. Existing saved worlds remain readable/playable when the LLM is disabled, provided storage remains configured.
+
+### Explicit rule, not a validated learning assessment
+
+For each distinct attempted core/practice mission, evidence is `0` until correct, then `max(0.2, 1 - 0.15 × wrong attempts - 0.2 × revealed hint levels)`. A concept's displayed 0–100 estimate is the mean of its attempted missions. We count first-try correct answers independently, even with assistance; hints and retries are displayed alongside them. Unattempted concepts show **Not enough evidence**, never zero/weak. A score below 70 with at least two attempts or one solved mission recommends practice. These thresholds are transparent product rules, not a calibrated probability of mastery, grade or research result.
+
+After two valid wrong attempts, hints automatically advance to the explanation (level 2); after four, to the worked example (level 3). Invalid, cancelled local checks and duplicate requests do not add attempts. Manual hints remain bounded. NPC alternative explanations use saved `concepts[].explanations`, falling back to the existing misconception/source snippets; viewing them records assistance on unfinished missions. Revealed hints count as assistance whether manually requested or automatically shown. Repeated successes on a completed mission cannot inflate evidence.
+
+### Stored variants and backward compatibility
+
+Spec version 1 gains optional `practiceVariants` (up to eight total, unique IDs, references to an existing core mission, bounded answer-free puzzle and canonical source snippets), plus optional bounded plain-text concept explanations. Older version-1 worlds remain valid. New generation asks for a variant per mission and alternative explanations; private keys include variant IDs, and grounding audits cover variants/explanations too. Unsupported variants are discarded. Correct answers, order arrays and pair maps remain private.
+
+Low evidence unlocks variants for that concept. Acceptance keeps an unlocked variant available even after the score improves. Variants inherit the core mission's prerequisite gates/NPC, grant **zero XP**, cannot unlock gates, and contribute distinct checked learning evidence. The panel offers them directly; the base map and collisions still use the original validated template. No variant means no surprise LLM call: the UI recommends an NPC explanation instead. Practice is optional and does not block the core finale.
+
+The concept panel labels **Learning** and **Engagement** separately. Time is a bounded estimate from visible, unpaused activity ticks (15-second heartbeat, at most 30 seconds credited between interactions), not exact telemetry or knowledge evidence; XP/completion never enter the mastery calculation. Local sample evidence persists in account-scoped browser storage, is normalized on restore, stays independent of cloud storage, and is always labelled practice-only. Phaser remains lazy.
+
+### Dante
+
+`create_adventure {lectureId}` generates from an owned lecture and opens the generation/preview screen; `open_adventure {id}` validates ownership/support before navigation. Strict ID/field validation and workspace/account guards apply in chat and Live; shared workspaces exclude personal learning/catalogues. Dante receives bounded cloud evidence from server-loaded progress, replacing client-supplied stats, or explicitly labelled local sample estimates. It answers “what am I weak at?” using checked attempts/hints/retries, acknowledges missing evidence and never infers learning from time or completion. Names, source text and model output remain untrusted data, never instructions.

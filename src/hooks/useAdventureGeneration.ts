@@ -71,7 +71,7 @@ export function useAdventureGeneration({
         .then((d) => {
           if (current()) {
             setEnabled(d.enabled === true);
-            if (d.enabled) void refresh();
+            if (d.storage || d.enabled) void refresh();
           }
         })
         .catch(() => {});
@@ -93,6 +93,7 @@ export function useAdventureGeneration({
     setError("");
     setPreview(null);
     setProgress("extracting");
+    let generatedId: string | null = null;
     try {
       if (source instanceof File && source.size > 10 * 1024 * 1024)
         throw new Error();
@@ -136,6 +137,7 @@ export function useAdventureGeneration({
             setProgress(event.stage);
           if (event.type === "ready") {
             ready = true;
+            generatedId = event.adventure.id;
             setPreview({ ...event.preview, id: event.adventure.id });
             void refresh();
           }
@@ -151,6 +153,7 @@ export function useAdventureGeneration({
       if (active.current === abort) active.current = null;
       if (current()) setProgress("");
     }
+    return generatedId;
   };
   const loadGeneratedAdventure = useCallback(
     async (id: string): Promise<AdventureSpec> => {

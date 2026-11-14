@@ -21,3 +21,5 @@ describe('adventure boundary',()=>{
 it('rejects quest layouts whose only unlocker is trapped behind its own gate',()=>{
  const s=sample();s.npcs[0].slot='observatory';expect(()=>validateAdventureSpec(s)).toThrow();
 });
+
+it('accepts old version-one specs and rejects unknown/private fields or invalid references in practice variants',()=>{const old=structuredClone(lostBinaryKingdom);delete old.practiceVariants;expect(validateAdventureSpec(old).specVersion).toBe(1);for(const mutate of [(s:any)=>s.practiceVariants[0].missionId='missing',(s:any)=>s.practiceVariants[0].id=s.missions[0].id,(s:any)=>s.practiceVariants[0].puzzle.order=[0,1,2,3],(s:any)=>s.concepts[0].explanations=['<script>']]){const copy=structuredClone(lostBinaryKingdom);mutate(copy);expect(()=>validateAdventureSpec(copy)).toThrow();}});

@@ -5,9 +5,9 @@ export const emptyProgress=():QuestProgress=>({accepted:[],completed:[]});
 /** Rebuild progress from known IDs and prerequisite closure; ignore forged XP/unlock fields. */
 export function normalizeProgress(spec:AdventureSpec,input:unknown):QuestProgress{
  const raw=input as Partial<QuestProgress>|null;
- const wanted=new Set(Array.isArray(raw?.completed)?raw.completed.filter(v=>typeof v==='string').slice(0,8):[]),completed=new Set<string>();
+ const wanted=new Set(Array.isArray(raw?.completed)?raw.completed.filter(v=>typeof v==='string').slice(0,16):[]),completed=new Set<string>();
  for(let pass=0;pass<spec.missions.length;pass++)for(const m of spec.missions)if(wanted.has(m.id)&&m.prerequisites.every(id=>completed.has(id)))completed.add(m.id);
- const accepted=new Set(Array.isArray(raw?.accepted)?raw.accepted.filter(v=>typeof v==='string').slice(0,8):[]);
+ const accepted=new Set(Array.isArray(raw?.accepted)?raw.accepted.filter(v=>typeof v==='string').slice(0,16):[]);
  return {completed:spec.missions.filter(m=>completed.has(m.id)).map(m=>m.id),accepted:spec.missions.filter(m=>accepted.has(m.id)&&!completed.has(m.id)&&m.prerequisites.every(id=>completed.has(id))).map(m=>m.id)};
 }
 export function questStatus(spec:AdventureSpec,progress:QuestProgress,id:string):QuestStatus{

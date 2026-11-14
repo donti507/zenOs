@@ -1,3 +1,5 @@
+import {adaptiveSpec,practiceMissionIds,emptyAdventureRun} from './systems/adaptation';
+import ConceptMasteryPanel from './systems/ConceptMasteryPanel';
 import {createPortal} from 'react-dom';
 import {useEffect,useMemo,useRef,useState,useCallback} from 'react';
 import {useReducedMotion} from 'motion/react';
@@ -17,8 +19,10 @@ import Hud from './systems/Hud';
 import Minimap from './systems/Minimap';
 import PuzzleOverlay from './mechanics/PuzzleOverlay';
 import MissionComplete from './systems/MissionComplete';
-export default function AdventureViewport({spec,adventureId='lost-binary-kingdom'}:{spec:AdventureSpec;adventureId?:string}){
- useUiLanguage();const {adventureSettings,setAdventureSettings,liveOpen,showModal,adventureProgress,advanceAdventureQuest}=useZenos();const systemReduce=!!useReducedMotion();
+export default function AdventureViewport({spec:baseSpec,adventureId='lost-binary-kingdom'}:{spec:AdventureSpec;adventureId?:string}){
+ useUiLanguage();const {adventureSettings,setAdventureSettings,liveOpen,showModal,adventureProgress,advanceAdventureQuest,adventureRuns,requestAdventureExplanation,startAdventurePractice,tickAdventure,adventureRuntimeError}=useZenos();const systemReduce=!!useReducedMotion();
+ const run=adventureRuns?.[adventureId]??emptyAdventureRun(),practiceKey=practiceMissionIds(baseSpec,run.learning).join(',');
+ const spec=useMemo(()=>adaptiveSpec(baseSpec,run.learning),[baseSpec,practiceKey]);
  const reducedMotion=systemReduce||adventureSettings.reducedMotion;
  const saved=adventureProgress?.[adventureId],progress=useMemo(()=>normalizeProgress(spec,saved),[spec,saved]),progressRef=useRef(progress);progressRef.current=progress;
  const host=useRef<HTMLDivElement>(null),engine=useRef<EngineHandle|null>(null),position=useRef<Position|undefined>(undefined),pausedRef=useRef(false),dialogueRef=useRef<string|null>(null),interactRef=useRef<(id?:string)=>void>(()=>{});
@@ -54,15 +58,17 @@ export default function AdventureViewport({spec,adventureId='lost-binary-kingdom
   let active=true;const controller=new AbortController();setReady(false);setError(false);
   const stopInput=bindKeyboard(host.current!,vector=>{if(!pausedRef.current)engine.current?.setMovement(vector);},pause,()=>interactRef.current());
   const hide=()=>{if(document.hidden)pause();};window.addEventListener('blur',pause);document.addEventListener('visibilitychange',hide);
-  void mountAdventure({parent:host.current!,spec,progress:progressRef.current,signal:controller.signal,position:position.current,lowPerformance:adventureSettings.lowPerformance,reducedMotion,
+  void mountAdventure({parent:host.current!,spec:baseSpec,progress:progressRef.current,signal:controller.signal,position:position.current,lowPerformance:adventureSettings.lowPerformance,reducedMotion,
    onReady:()=>{if(active){setReady(true);if(!pausedRef.current)host.current?.focus({preventScroll:true});}},onFailure:()=>{if(active){setError(true);pause();}},
    onPosition:p=>{if(active){position.current=p;host.current?.setAttribute('data-player-x',p.x.toFixed(3));host.current?.setAttribute('data-player-y',p.y.toFixed(3));setPlayerPosition(p);}},
   }).then(handle=>{if(!active){handle?.destroy();return;}engine.current=handle;handle?.setProgress?.(progressRef.current);handle?.setPaused(pausedRef.current);}).catch(()=>{if(active){setError(true);pause();}});
   return()=>{active=false;controller.abort();stopInput();window.removeEventListener('blur',pause);document.removeEventListener('visibilitychange',hide);if(engine.current){position.current=engine.current.getPosition();engine.current.destroy();engine.current=null;}};
- },[spec,adventureSettings.lowPerformance,reducedMotion,attempt,pause]);
+ },[baseSpec,adventureSettings.lowPerformance,reducedMotion,attempt,pause]);
  useEffect(()=>{if(liveOpen||showModal)pause();},[liveOpen,showModal,pause]);
+ useEffect(()=>{if(!ready||paused||dialogueNpc||puzzleMission)return;const tick=()=>{if(!document.hidden)tickAdventure?.(adventureId);};tick();const timer=window.setInterval(tick,15000);return()=>window.clearInterval(timer);},[ready,paused,dialogueNpc,puzzleMission,adventureId,tickAdventure]);
+ const practice=async(id:string)=>{if(await startAdventurePractice?.(adventureId,id)){pausedRef.current=true;engine.current?.setPaused(true);setPuzzleMission(id);}};
  const nearest=nearbyNpc(spec,playerPosition,progress);
- return <div className="space-y-3"><Hud spec={spec} progress={progress}/><div className="flex items-center justify-between gap-3"><p className="text-xs text-on-surface-variant">{tr('E / Space / tap to talk when near')}</p><button className={btn.secondary+' min-h-11'} onClick={pause}>{tr('Pause and settings')}</button></div>
+ return <div className="space-y-3"><Hud sample={adventureId==='lost-binary-kingdom'} spec={spec} progress={progress}/><div className="flex items-center justify-between gap-3"><p className="text-xs text-on-surface-variant">{tr('E / Space / tap to talk when near')}</p><button className={btn.secondary+' min-h-11'} onClick={pause}>{tr('Pause and settings')}</button></div>
  <div className="relative rounded-xl overflow-hidden bg-surface-container-low ring-1 ring-outline-variant"><div ref={host} tabIndex={0} aria-label={tr('Adventure world. Use WASD or arrow keys to walk. Escape pauses.')} aria-describedby="adventure-controls" className="h-[min(42dvh,440px)] min-h-64 w-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onPointerDown={event=>{
   if(pausedRef.current)return;host.current?.focus({preventScroll:true});const npcId=engine.current?.npcAt?.(event.clientX,event.clientY)??null;
   tap.current={id:event.pointerId,x:event.clientX,y:event.clientY,npcId};
@@ -75,10 +81,11 @@ export default function AdventureViewport({spec,adventureId='lost-binary-kingdom
  {!ready&&!error&&<p role="status" className="absolute inset-0 flex items-center justify-center bg-surface-container-low text-on-surface-variant">{tr('Loading adventure world…')}</p>}
  {error&&<div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-5 bg-surface-container-low"><p role="alert" className="text-error">{tr('The world could not load. Please try again.')}</p><button className={btn.primary} onClick={()=>{pausedRef.current=false;setPaused(false);setAttempt(v=>v+1);}}>{tr('Retry')}</button></div>}
  {ready&&!error&&<><div className="absolute top-2 right-2"><Minimap spec={spec} position={playerPosition} progress={progress}/></div><div className="absolute bottom-3 left-3"><TouchJoystick compact disabled={paused||!!dialogueNpc||!!puzzleMission} onMove={vector=>{if(!pausedRef.current)engine.current?.setMovement(vector);}}/></div><button className={btn.primary+' absolute bottom-20 right-3 max-w-[52%] min-h-11 text-sm'} disabled={paused||!!dialogueNpc||!!puzzleMission||!nearest} onClick={()=>interactRef.current()}>{nearest?tr('Talk to {{0}}',nearest.name):tr('Move near a character')}</button></>}
- {notice&&<div key={notice.serial} className="absolute top-2 left-2 right-32 pointer-events-none"><MissionComplete title={notice.title} xp={notice.xp} unlocked={notice.unlocked} reducedMotion={reducedMotion||adventureSettings.lowPerformance}/></div>}
+ {notice&&<div key={notice.serial} className="absolute top-2 left-2 right-32 pointer-events-none"><MissionComplete sample={adventureId==='lost-binary-kingdom'} title={notice.title} xp={notice.xp} unlocked={notice.unlocked} reducedMotion={reducedMotion||adventureSettings.lowPerformance}/></div>}
  </div><p id="adventure-controls" className="text-xs text-on-surface-variant">{tr('Walk with WASD, arrows or the joystick. Press E/Space or tap a nearby character to talk. Escape pauses.')}</p>
 
- {dialogueNpc&&!paused&&<div key={dialogueNpc}><DialogueBox puzzlesEnabled={adventureId==='lost-binary-kingdom'} spec={spec} npcId={dialogueNpc} progress={progress} reducedMotion={reducedMotion||adventureSettings.lowPerformance} onClose={closeDialogue} onQuest={onQuest}/></div>}
+ {dialogueNpc&&!paused&&<div key={dialogueNpc}><DialogueBox onExplanation={id=>requestAdventureExplanation?.(adventureId,id)??Promise.resolve(false)} spec={spec} npcId={dialogueNpc} progress={progress} reducedMotion={reducedMotion||adventureSettings.lowPerformance} onClose={closeDialogue} onQuest={onQuest}/></div>}
  {puzzleMission&&!paused&&<div key={puzzleMission}><PuzzleOverlay spec={spec} missionId={puzzleMission} adventureId={adventureId} reducedMotion={reducedMotion||adventureSettings.lowPerformance} onClose={closePuzzle} onSolved={onSolved}/></div>}
+ {adventureRuntimeError&&<p role="alert" className="text-error">{tr('Could not save adventure progress. Please try again.')}</p>}<ConceptMasteryPanel spec={baseSpec} run={run} onPractice={id=>void practice(id)}/>
  {createPortal(<Modal open={paused&&!error} onClose={resume} title={tr('Adventure paused')} footer={<button className={btn.primary+' min-h-11'} disabled={!!liveOpen||!!showModal} onClick={resume}>{tr('Resume exploring')}</button>}><p className="text-on-surface-variant">{tr('Your explorer stays here while you take a break.')}</p><label className="flex items-center gap-3 min-h-11"><input type="checkbox" checked={adventureSettings.lowPerformance} onChange={e=>setAdventureSettings({lowPerformance:e.target.checked})}/><span>{tr('Low-performance mode')}<span className="block text-sm text-on-surface-variant">{tr('Lower resolution, 30 FPS, no particles.')}</span></span></label><label className="flex items-center gap-3 min-h-11"><input type="checkbox" checked={reducedMotion} disabled={systemReduce} onChange={e=>setAdventureSettings({reducedMotion:e.target.checked})}/><span>{tr('Reduced motion')}<span className="block text-sm text-on-surface-variant">{systemReduce?tr('Enabled by your device preference.'):tr('No walk animation or camera easing.')}</span></span></label></Modal>,document.body)}</div>;
 }
