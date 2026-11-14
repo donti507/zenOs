@@ -4,9 +4,11 @@ Turn a lecture into a short, playable 2.5D isometric adventure. Students walk ar
 
 ## Implementation status — 14 November 2026
 
-**G1 is implemented.** `/adventures` lists the hand-written sample; `/adventures/lost-binary-kingdom` opens an explorable isometric village. Both signed-in and local/demo users can play. Sidebar and horizontally scrollable mobile navigation expose Adventures. This is explicitly an **exploration preview**: quests, puzzle interaction, generation, scoring, server verification, persistent progress and lecture/PDF uploads are later stages, not represented as working features.
+**G1 and G2 are implemented.** `/adventures` lists the hand-written sample; `/adventures/lost-binary-kingdom` opens the isometric village with NPC interaction, DOM dialogue, prerequisite quests, preview XP/levels, locked areas, quest markers, HUD and minimap. Signed-in and local/demo users can explore with keyboard or touch.
 
-No database migration, new environment variables or external service is required for this slice. The three sample mission specs describe future puzzles; their correct-answer keys are not included in the client sample. The list and game settings are exposed through ZenosContext's `useAdventures` hook; bounded display preferences use `zenos_adventure_settings_v1` in browser storage and tolerate blocked storage. Positions remain cosmetic, in-memory and reset on leaving the play page; changing render settings preserves the current position.
+This remains an explicit **quest-systems preview**, not a working lecture-to-game generation/assessment pipeline. Accept a mission after reading its NPC briefing; revisit the character and choose **Complete preview step** to exercise progression. That confirmation is deliberately labelled and never claims an answer was correct or a learning objective mastered. Puzzle mechanics and authoritative server verification remain G3–G5. Preview XP never reaches account badges, task streaks, learning analytics or a server endpoint.
+
+No database migration, new environment variables or external service is required for this slice. `useAdventures` in ZenosContext owns preview runs, keyed by the current account/local scope, and synchronously rejects stale owner actions. Runs survive navigation within the current app session but clear on sign-out/account change/reload. Display preferences remain in `zenos_adventure_settings_v1`; position is cosmetic and resets on leaving play, while render-setting changes preserve it. No answers or production XP counters are stored in the browser.
 
 ## Principles
 1. **AI writes data, never code.** The LLM produces a JSON game spec. The engine only interprets known fields with reusable mechanics. Nothing in a spec is ever executed.
@@ -73,7 +75,18 @@ Walking uses WASD/arrows or a normalized eight-direction touch vector; diagonal 
 
 Reduced motion follows the device preference, with an additional per-browser opt-in: standing directional sprites replace walk animation and camera follow has no easing. Low-performance mode uses Canvas rendering, 65% backing dimensions with matching camera zoom, a 30 FPS cap and no particles. Normal mode uses Phaser AUTO (WebGL with Canvas fallback), smooth camera follow and a 60 FPS cap. No particle emitters or audio are created in this foundation.
 
-Future pure logic (quests, unlocks, mechanic validation, mastery) remains outside Phaser so it can be unit-tested with Vitest.
+Quest, unlock and progression rules now live outside Phaser; future mechanic validation and mastery logic will use the same pure-function testing boundary.
+
+## G2 systems
+
+- `systems/npc.ts` derives placement from approved template slots, selects the nearest character within 1.45 tile units and computes available/active/locked/completed markers (`!`, `?`, `…`, `✓`). E/Space, the touch action button and direct sprite taps share the same proximity and unlocked-area checks. Holding E/Space does not repeatedly interact. NPCs cannot be contacted through a locked area boundary.
+- `systems/dialogue.ts` resolves spec speaker IDs and clamps line navigation. `DialogueBox.tsx` is a readable, keyboard-navigable DOM modal with Previous/Next, E-to-advance, show-full-line, Close/Escape and semantic speaker/text output. Text is escaped by React. Typewriter output has a complete screen-reader equivalent; device/custom reduced motion or low-performance mode shows the full line immediately. Timers clean up on line changes/unmount. Walking is paused during conversation.
+- `systems/quest.ts` contains pure normalization, status, prerequisite, objective/finale and accept/complete transitions. A completion requires an accepted, available mission, cannot grant XP twice, and derives unlocks from the mission spec. Unknown IDs, orphan completions and forged counters are discarded. Branching prerequisites work independently of mission array order.
+- `systems/progression.ts` recomputes XP from completed spec missions, never from a caller-supplied counter. Preview levels use 50 XP per level; HUD shows total preview XP and progress toward the next level. The sample awards 20 → 50 → 90 XP in total, ending at level 2. This balance is a preview constant, not a learning metric.
+- `systems/world.ts` defines code-owned gated regions for the three approved gate slots. Only gate slots referenced by a spec are active. A locked region blocks the player's foot radius; its boundary/gate art and minimap change when the unlocking mission completes. The spec validator proves there is a mission ordering with reachable NPCs, rejecting a character trapped behind its own required gate.
+- `systems/Hud.tsx`, `Minimap.tsx` and `MissionComplete.tsx` render the current mission/objective, level/XP bar, completion/finale state, player/NPC/building/area map and a bounded completion notice. Normal completion feedback animates; custom/device reduced motion and low-performance mode use static feedback. Minimap and notices stay inside the mobile viewport; they are presentation, not a source of XP or unlock decisions.
+
+The Phaser handle accepts a normalized quest snapshot for markers and collision regions. Context receives preview accept/complete actions only; it does not trust renderer-provided XP/unlock lists. All game objects, geometry, colours and handlers remain code-owned. Future server-verified completion must enter through a separate verified-state adapter, not the preview confirmation path.
 
 ## Game spec (v1)
 ```ts
@@ -183,7 +196,7 @@ Acceptance: a student opens a processed lecture, clicks "Make an adventure", see
 | Task | Scope |
 |---|---|
 | G1 ✅ | Implemented: lazy Phaser setup, routes/nav, strict spec schema + validator, Kenney isometric tilemap, eight-direction movement/collisions, touch, pause/render preferences and sample. |
-| G2 | NPCs, dialogue, quests, XP/progression, HUD, minimap |
+| G2 ✅ | Spec-driven nearby NPC interaction/dialogue, prerequisite quests and local preview XP/levels, collision gates, markers, HUD, minimap and reduced-motion completion feedback. |
 | G3 | gate / sequence / match mechanics, hints, feedback (local fake verifier) |
 | G4 🔒 | AI generation pipeline, grounding, prompt-injection defence, storage |
 | G5 🔒 | Server answer checks, saved progress, results screen |
@@ -211,5 +224,7 @@ The four PNGs were obtained from the pack mirrored in [brean/isometric-kenney-te
 Explorer sprite frames, simple tree shapes and shadows are original code-owned ZEN OS art. No external asset or code URL can be supplied by a spec. All art is served from the application origin, only on play.
 
 ## Foundation validation
+
+Vitest additionally covers quest branching/closure, duplicate and forged rewards, gate collisions/reachability, NPC proximity, dialogue typewriter/reduced motion/plain-text rendering, session owner isolation and NPC-to-HUD completion flow. Chromium checks exercise the complete three-mission preview chain with E and actual sprite taps.
 
 Vitest covers schema/version rejection, executable/unknown fields, graph references/cycles, bounded puzzle data, isometric conversion, collision boundaries, diagonal speed, frame-gap capping, keyboard scoping/cleanup, late lazy-load cancellation and local settings isolation. DOM lifecycle tests cover pause/resume and device motion preference. Chromium checks cover local-mode list/play, no Phaser on the list, keyboard/touch movement, pause and reduced/low-performance settings, cleanup after navigation, and 390px light/dark layouts. Run `npm run typecheck`, `npm test`, and `npm run build` before committing.

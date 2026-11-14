@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {GATE_AREAS,insideArea} from './systems/world';
 import { VILLAGE } from './templates/village';
 export const SPEC_VERSION = 1 as const;
 const id=z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
@@ -39,6 +40,14 @@ export const adventureSpecSchema=base.superRefine((s,ctx)=>{
  const visiting=new Set<string>(),done=new Set<string>();
  const visit=(key:string)=>{if(visiting.has(key)){issue('Prerequisite cycle');return;}if(done.has(key))return;visiting.add(key);for(const ref of missions.get(key)?.prerequisites||[])if(missions.has(ref))visit(ref);visiting.delete(key);done.add(key);};
  for(const mission of s.missions)visit(mission.id);
+ // Prove an ordering exists in which each NPC can be reached before its mission unlock.
+ const possible=new Set<string>(),open=new Set<string>(),gates=[...new Set(s.missions.flatMap(m=>m.unlocks?[m.unlocks.gateSlot]:[]))];
+ for(let pass=0;pass<s.missions.length;pass++)for(const mission of s.missions){
+  const npc=s.npcs.find(n=>n.id===mission.npcId);if(!npc||possible.has(mission.id)||!mission.prerequisites.every(id=>possible.has(id)))continue;
+  if(gates.some(gate=>!open.has(gate)&&insideArea(VILLAGE.npcSlots[npc.slot],GATE_AREAS[gate])))continue;
+  possible.add(mission.id);if(mission.unlocks)open.add(mission.unlocks.gateSlot);
+ }
+ if(possible.size!==s.missions.length)issue('A mission is unreachable behind prerequisites or a locked area');
  if(s.finale.missionIds.some(v=>!missions.has(v))||new Set(s.finale.missionIds).size!==s.finale.missionIds.length)issue('Unknown or duplicate finale reference');
 });
 export type AdventureSpec=z.infer<typeof adventureSpecSchema>;

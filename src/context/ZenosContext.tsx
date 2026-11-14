@@ -284,7 +284,7 @@ export const ZenosProvider = ({ children }: { children: React.ReactNode }) => {
     const { data } = await supabase.auth.getSession();
     return data?.session?.access_token ?? null;
   }, []);
-  const adventures=useAdventures();
+  const adventures=useAdventures({ownerId:user?.id??null,isOffline});
   const usos=useUsos({owner:user?.id??null,offline:isOffline,getToken:getAuthToken});
   const { accessToken, googleConnected, googleCalendarError, getGoogleAccessToken, disconnectGoogleCalendar: disconnectGoogle } = useGoogleCalendar({ userId: user?.id ?? null, isOffline, getAuthToken, providerSession: googleProviderSession });
   const googleReadRequest = useRef(0);
