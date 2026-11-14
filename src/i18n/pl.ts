@@ -1,5 +1,22 @@
 /** Application copy only; text, never HTML. */
 export const polish:Record<string,string>={
+"Reading source":"Odczytywanie materiału",
+"Finding learning objectives":"Określanie celów nauki",
+"Building your world":"Budowanie świata",
+"Checking the game":"Sprawdzanie gry",
+"Checking source support":"Sprawdzanie zgodności ze źródłem",
+"Saving adventure":"Zapisywanie przygody",
+"Missions":"Misje",
+"Generate from your lesson":"Wygeneruj ze swojej lekcji",
+"One daily message. PDF: up to 10 MB and 40 pages. Review the preview before exploring.":"Jedna wiadomość z dziennego limitu. PDF: do 10 MB i 40 stron. Sprawdź podgląd przed eksploracją.",
+"Choose a lecture":"Wybierz wykład",
+"Or upload a PDF":"Lub prześlij PDF",
+"Generating adventure…":"Generowanie przygody…",
+"Generate adventure":"Wygeneruj przygodę",
+"Could not generate adventure. Check the source and try again.":"Nie udało się wygenerować przygody. Sprawdź materiał i spróbuj ponownie.",
+"Generated worlds support exploration. Puzzle checking is coming soon.":"Wygenerowane światy można eksplorować. Sprawdzanie zagadek pojawi się wkrótce.",
+"Play the sample or generate a private world from your lecture in Personal space.":"Zagraj w przykład lub wygeneruj prywatny świat z wykładu w przestrzeni osobistej.",
+
   "(use headphones)": "(używaj słuchawek)",
   ", I'm Dante. I can see your tasks, meetings and calendar. Ask me what to focus on, or tell me to add, complete or reschedule things. Type, tap the mic, or start a hands-free conversation.": ", jestem Dante. Widzę Twoje zadania, spotkania i kalendarz. Zapytaj, na czym się skupić, lub poproś o dodanie, ukończenie albo przełożenie zadań. Napisz, dotknij mikrofonu lub rozpocznij rozmowę głosową.",
   "-day streak": "-dniowa seria",
