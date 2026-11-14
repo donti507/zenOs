@@ -18,3 +18,6 @@ describe('adventure boundary',()=>{
  });
  it('validates choice inputs and matching dimensions',()=>{const s:any=sample();s.missions[1].puzzle.input='choice';expect(()=>validateAdventureSpec(s)).toThrow();s.missions[1].puzzle.choices=['A','B'];expect(()=>validateAdventureSpec(s)).not.toThrow();s.missions[2].puzzle.right.pop();expect(()=>validateAdventureSpec(s)).toThrow();});
 });
+it('rejects quest layouts whose only unlocker is trapped behind its own gate',()=>{
+ const s=sample();s.npcs[0].slot='observatory';expect(()=>validateAdventureSpec(s)).toThrow();
+});
