@@ -1,3 +1,4 @@
+import {createAdventures} from './server/adventures';
 import {createUsos} from './server/usos';
 import {createWorkspaceContextReader} from './server/workspaces';
 import { createTts } from './server/tts';
@@ -50,6 +51,11 @@ async function startServer() {
   app.post('/api/lectures/:id/analyze', requireUser, lectures.useJob, lectures.cachedResult, rateLimit, daily.count('messages'), lectures.analyze);
   app.delete('/api/lectures/:id', requireUser, lectures.useJob, lectures.cancel);
   app.post('/api/snap', requireUser, rateLimit, snapImageBody, createSnapHandler());
+  const adventures=createAdventures();
+  app.get('/api/adventures/status',adventures.status);
+  app.post('/api/adventures/generate',requireUser,adventures.signed,rateLimit,adventures.acquire,adventures.body,adventures.prepare,daily.count('messages'),adventures.generate);
+  app.get('/api/adventures',requireUser,adventures.signed,adventures.list);
+  app.get('/api/adventures/:id',requireUser,adventures.signed,adventures.read);
   app.use(express.json({ limit: '512kb' }));
   app.post('/api/auth/usos/connect',usos.connect);
   app.post('/api/auth/usos/complete',usos.complete);

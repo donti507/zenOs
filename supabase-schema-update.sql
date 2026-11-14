@@ -1912,3 +1912,23 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.save_usos_account(text,uuid,text,text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.save_usos_account(text,uuid,text,text,text) TO service_role;
+
+-- Private generated Adventures. Answers have no browser column privileges.
+CREATE TABLE IF NOT EXISTS public.adventures (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ title text NOT NULL CHECK (char_length(title) BETWEEN 1 AND 80),
+ lecture_id uuid REFERENCES public.lectures(id) ON DELETE SET NULL,
+ spec jsonb NOT NULL CHECK (jsonb_typeof(spec)='object'),
+ answers jsonb NOT NULL CHECK (jsonb_typeof(answers)='object'),
+ source_refs jsonb NOT NULL CHECK (jsonb_typeof(source_refs)='array'),
+ status text NOT NULL DEFAULT 'ready' CHECK(status='ready'),
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS adventures_owner_created ON public.adventures(user_id,created_at DESC,id);
+ALTER TABLE public.adventures ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS adventures_own_read ON public.adventures;
+CREATE POLICY adventures_own_read ON public.adventures FOR SELECT TO authenticated USING(user_id=auth.uid());
+REVOKE ALL ON public.adventures FROM PUBLIC,anon,authenticated;
+GRANT SELECT(id,user_id,title,lecture_id,spec,source_refs,status,created_at) ON public.adventures TO authenticated;
+GRANT ALL ON public.adventures TO service_role;
