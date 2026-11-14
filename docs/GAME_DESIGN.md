@@ -4,11 +4,12 @@ Turn a lecture into a short, playable 2.5D isometric adventure. Students walk ar
 
 ## Implementation status — 14 November 2026
 
-**G1 and G2 are implemented.** `/adventures` lists the hand-written sample; `/adventures/lost-binary-kingdom` opens the isometric village with NPC interaction, DOM dialogue, prerequisite quests, preview XP/levels, locked areas, quest markers, HUD and minimap. Signed-in and local/demo users can explore with keyboard or touch.
+**G1–G3 are implemented.** `/adventures` lists the hand-written sample; `/adventures/lost-binary-kingdom` opens the isometric village with NPC interaction, DOM dialogue, prerequisite quests, preview XP/levels, locked areas, quest markers, HUD and minimap. Signed-in and local/demo users can explore with keyboard or touch.
 
-This remains an explicit **quest-systems preview**, not a working lecture-to-game generation/assessment pipeline. Accept a mission after reading its NPC briefing; revisit the character and choose **Complete preview step** to exercise progression. That confirmation is deliberately labelled and never claims an answer was correct or a learning objective mastered. Puzzle mechanics and authoritative server verification remain G3–G5. Preview XP never reaches account badges, task streaks, learning analytics or a server endpoint.
+The hand-written sample now has playable **gate, sequence and match puzzles**. Accept a mission after its NPC briefing, reopen the conversation and choose **Start puzzle**. A correct local sample check completes the mission, grants preview XP and opens its gate. The old **Complete preview step** shortcut has been removed. Preview XP remains session-only and never reaches account badges, task streaks, learning analytics or a server endpoint. Lecture generation and authoritative server verification remain G4–G5.
 
-No database migration, new environment variables or external service is required for this slice. `useAdventures` in ZenosContext owns preview runs, keyed by the current account/local scope, and synchronously rejects stale owner actions. Runs survive navigation within the current app session but clear on sign-out/account change/reload. Display preferences remain in `zenos_adventure_settings_v1`; position is cosmetic and resets on leaving play, while render-setting changes preserve it. No answers or production XP counters are stored in the browser.
+The public spec contains no answer keys, correct-order arrays, pair maps or numeric tolerances. G3 deliberately uses an inspectable **local fake verifier for the hand-written sample only**, in a separate lazy module; this is not production answer security. Real lecture answer keys must stay server-side when G5 replaces the adapter.
+No database migration, new environment variables or external service is required for this slice. `useAdventures` in ZenosContext owns preview runs, keyed by the current account/local scope, and synchronously rejects stale owner actions. Runs survive navigation within the current app session but clear on sign-out/account change/reload. Display preferences remain in `zenos_adventure_settings_v1`; position is cosmetic and resets on leaving play, while render-setting changes preserve it. No production answer keys or XP counters are stored in the browser. The local demo checker contains sample fixture answers only; drafts, attempts and hint levels are in-memory and scoped to the current session.
 
 ## Principles
 1. **AI writes data, never code.** The LLM produces a JSON game spec. The engine only interprets known fields with reusable mechanics. Nothing in a spec is ever executed.
@@ -81,12 +82,38 @@ Quest, unlock and progression rules now live outside Phaser; future mechanic val
 
 - `systems/npc.ts` derives placement from approved template slots, selects the nearest character within 1.45 tile units and computes available/active/locked/completed markers (`!`, `?`, `…`, `✓`). E/Space, the touch action button and direct sprite taps share the same proximity and unlocked-area checks. Holding E/Space does not repeatedly interact. NPCs cannot be contacted through a locked area boundary.
 - `systems/dialogue.ts` resolves spec speaker IDs and clamps line navigation. `DialogueBox.tsx` is a readable, keyboard-navigable DOM modal with Previous/Next, E-to-advance, show-full-line, Close/Escape and semantic speaker/text output. Text is escaped by React. Typewriter output has a complete screen-reader equivalent; device/custom reduced motion or low-performance mode shows the full line immediately. Timers clean up on line changes/unmount. Walking is paused during conversation.
-- `systems/quest.ts` contains pure normalization, status, prerequisite, objective/finale and accept/complete transitions. A completion requires an accepted, available mission, cannot grant XP twice, and derives unlocks from the mission spec. Unknown IDs, orphan completions and forged counters are discarded. Branching prerequisites work independently of mission array order.
+- `systems/quest.ts` contains pure normalization, status, prerequisite, objective/finale and accept/complete transitions. A completion requires an accepted, available mission and a verifier result, cannot grant XP twice, and derives unlocks from the mission spec. Unknown IDs, orphan completions and forged counters are discarded. Branching prerequisites work independently of mission array order.
 - `systems/progression.ts` recomputes XP from completed spec missions, never from a caller-supplied counter. Preview levels use 50 XP per level; HUD shows total preview XP and progress toward the next level. The sample awards 20 → 50 → 90 XP in total, ending at level 2. This balance is a preview constant, not a learning metric.
 - `systems/world.ts` defines code-owned gated regions for the three approved gate slots. Only gate slots referenced by a spec are active. A locked region blocks the player's foot radius; its boundary/gate art and minimap change when the unlocking mission completes. The spec validator proves there is a mission ordering with reachable NPCs, rejecting a character trapped behind its own required gate.
 - `systems/Hud.tsx`, `Minimap.tsx` and `MissionComplete.tsx` render the current mission/objective, level/XP bar, completion/finale state, player/NPC/building/area map and a bounded completion notice. Normal completion feedback animates; custom/device reduced motion and low-performance mode use static feedback. Minimap and notices stay inside the mobile viewport; they are presentation, not a source of XP or unlock decisions.
 
-The Phaser handle accepts a normalized quest snapshot for markers and collision regions. Context receives preview accept/complete actions only; it does not trust renderer-provided XP/unlock lists. All game objects, geometry, colours and handlers remain code-owned. Future server-verified completion must enter through a separate verified-state adapter, not the preview confirmation path.
+The Phaser handle accepts a normalized quest snapshot for markers and collision regions. Context exposes mission acceptance, answer submission and hint requests; public direct-completion actions are rejected. It does not trust renderer-provided correctness, XP or unlock lists. All game objects, geometry, colours and handlers remain code-owned. Future server-verified completion must enter through a separate verified-state adapter, not a client-asserted completion path.
+
+## G3 puzzle mechanics
+
+`src/game/mechanics/` separates pure answer validation from reusable DOM controls and `PuzzleOverlay.tsx`. Public specs remain strict v1 data; repeated switch labels, repeated labels on either matching side, private answer fields and unknown fields are rejected. No spec field is evaluated as code or rendered as HTML.
+
+| Mechanic | Public controls | Private validation input |
+| --- | --- | --- |
+| `gate` | Numeric/text input or labelled radio choices | Number + non-negative absolute tolerance; normalized text; or choice index |
+| `sequence` | Activate switches by Tab/Enter or tap; undo/reset chosen order | A complete permutation of item indices |
+| `match` | Walk an avatar to an item, pick it up and carry it to a pedestal; undo pairings/return carried item | A one-to-one array of `[leftIndex, rightIndex]` pairs |
+
+`gate.ts`, `sequence.ts` and `match.ts` accept answer keys as **separate verifier arguments**, never as fields on a public puzzle. Numeric parsing rejects blank, hex, non-finite and malformed values; decimal commas are accepted without thousands separators. Tolerance is absolute, with rounding allowance only for a nonzero tolerance. Text normalization folds case, repeated whitespace, Unicode accents and Polish ł; an explicit private `normalize:false` uses exact matching. Sequence/match validators reject missing, repeated or out-of-range indices; match row order is irrelevant.
+
+Difficulty is authored in the spec and shown as Guided / Standard / Challenge. Guided sequence feedback may identify the first wrong switch position. Guided/Standard matching reports only a count of correct pairs. Challenge mode suppresses these positional/count clues. All levels retain the same accessible input methods and three hint levels.
+
+Hints reveal in order: **nudge → explanation → worked example**. The first is available immediately; the second requires one structurally valid incorrect attempt and the third requires two. Blank/incomplete/malformed attempts, cancellations and verifier errors do not advance hints or attempts. The sample's worked examples use analogous values rather than serializing its answer key. Feedback always names the mission's learning objective and may show the relevant concept misconception. It never returns private answer fields.
+
+`MatchMechanic.tsx` provides a bounded seven-column delivery board. Arrow/WASD movement and E/Space pickup/placement are scoped to that board; touch has direction/action buttons and station buttons that walk an adjacent path before pickup/delivery. Items cannot be placed remotely or reused. Normal motion animates the route; reduced-motion/low-performance mode jumps to the same valid path endpoint. Route timers cancel on disable/unmount, and all pairings have explicit undo controls. No drag-only operation is required.
+
+The overlay pauses the main world, keeps focus within its keyboard controls, supports Escape/close during verification and uses the shared design-system modal. Draft answers are ephemeral. Context retains hint/attempt state across closing/reopening within the session. A successful check grants XP once; the completion notice appears when returning to the world.
+
+### Fake verifier boundary and G5 replacement
+
+`samples/local-verifier.ts` is loaded on the first actual answer check, not on Home/list/play initialization. It owns only the known sample fixtures and returns bounded correctness/feedback codes. It is inspectable client code, not a place to store private lecture answers. `useAdventures` accepts checks only for the loaded hand-written sample and active missions, copies/bounds each attempt, rejects unknown payload fields and guards concurrent/replayed submissions. Scope epochs reject stale work even when an account changes away and back. Closing a puzzle aborts verification before late work can grant XP. Verifier errors are replaced with a fixed friendly message; answers are never logged.
+
+G5 must replace this local adapter with an authenticated server endpoint that owns real answer keys, counts attempts/hints canonically and returns verified progression. The pure validators are browser/Phaser-independent and can be reused server-side. Do not enable the fake adapter for generated or real lecture adventures. No SQL, environment variables, AI calls or daily quota use are introduced in G3.
 
 ## Game spec (v1)
 ```ts
@@ -197,7 +224,7 @@ Acceptance: a student opens a processed lecture, clicks "Make an adventure", see
 |---|---|
 | G1 ✅ | Implemented: lazy Phaser setup, routes/nav, strict spec schema + validator, Kenney isometric tilemap, eight-direction movement/collisions, touch, pause/render preferences and sample. |
 | G2 ✅ | Spec-driven nearby NPC interaction/dialogue, prerequisite quests and local preview XP/levels, collision gates, markers, HUD, minimap and reduced-motion completion feedback. |
-| G3 | gate / sequence / match mechanics, hints, feedback (local fake verifier) |
+| G3 ✅ | Reusable gate/sequence/carried-match controls, pure validation, difficulty feedback, three-step hints and local sample verification; no public answer keys. |
 | G4 🔒 | AI generation pipeline, grounding, prompt-injection defence, storage |
 | G5 🔒 | Server answer checks, saved progress, results screen |
 | G6 | Rule-based adaptation, mastery panel, Dante actions (create/open adventure) |
@@ -223,7 +250,9 @@ The four PNGs were obtained from the pack mirrored in [brean/isometric-kenney-te
 
 Explorer sprite frames, simple tree shapes and shadows are original code-owned ZEN OS art. No external asset or code URL can be supplied by a spec. All art is served from the application origin, only on play.
 
-## Foundation validation
+## Validation
+
+Vitest covers numeric/tolerance/text/choice checks, complete permutations/pair maps, public-spec answer exclusion, delivery movement/adjacency, hint thresholds, fake-verifier scope, concurrent/cancelled/stale-owner checks and full overlay success/feedback. Keyboard/touch control tests cover the same match delivery rules.
 
 Vitest additionally covers quest branching/closure, duplicate and forged rewards, gate collisions/reachability, NPC proximity, dialogue typewriter/reduced motion/plain-text rendering, session owner isolation and NPC-to-HUD completion flow. Chromium checks exercise the complete three-mission preview chain with E and actual sprite taps.
 

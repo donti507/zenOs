@@ -1,0 +1,8 @@
+import type {SequencePuzzle,PuzzleAnswer} from './types';
+import {activateSwitch} from './sequence';
+import {btn} from '../../components/ui/kit';
+import {tr,useUiLanguage} from '../../i18n';
+export default function SequenceMechanic({puzzle,answer,onChange,disabled}:{puzzle:SequencePuzzle;answer:PuzzleAnswer|null;onChange:(answer:PuzzleAnswer)=>void;disabled:boolean}){
+ useUiLanguage();const selected=answer?.type==='sequence'?answer.order:[];
+ return <section aria-label={tr('Sequence switches')} className="space-y-3"><p className="text-sm text-on-surface-variant">{tr('Activate each switch in order. Use Tab and Enter, or tap the tiles.')}</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{puzzle.items.map((item,index)=><button key={index} className={btn.secondary+' min-h-14 flex-col'} disabled={disabled||selected.includes(index)} aria-label={tr('Activate {{0}}',item)} onClick={()=>onChange({type:'sequence',order:activateSwitch(selected,index,puzzle.items.length)})}><span>{item}</span>{selected.includes(index)&&<span className="text-xs">{tr('Step {{0}}',selected.indexOf(index)+1)}</span>}</button>)}</div><ol aria-label={tr('Your switch order')} className="list-decimal pl-6 text-sm space-y-1">{selected.map(index=><li key={index}>{puzzle.items[index]}</li>)}</ol><div className="flex gap-2"><button className={btn.secondary} disabled={disabled||selected.length===0} onClick={()=>onChange({type:'sequence',order:selected.slice(0,-1)})}>{tr('Undo last switch')}</button><button className={btn.ghost} disabled={disabled||selected.length===0} onClick={()=>onChange({type:'sequence',order:[]})}>{tr('Reset switches')}</button></div></section>;
+}
